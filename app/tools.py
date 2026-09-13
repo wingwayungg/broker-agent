@@ -9,6 +9,7 @@ just in instructions.
 from langchain_core.tools import tool
 
 from app.ibkr_client import ibkr_client
+from app.research import research_stock as _research_stock
 
 
 @tool
@@ -83,10 +84,20 @@ def get_bracket_order_status(symbol: str) -> str:
     )
 
 
+@tool
+def research_stock(symbol: str) -> str:
+    """Research a stock — not necessarily one you hold — by fanning out to
+    up to three specialized sub-agents (fundamentals, technicals, and
+    news/sentiment) and returning a three-paragraph informational summary.
+    This is general research, not personalized investment advice."""
+    return _research_stock(symbol)
+
+
 ALL_TOOLS = [
     get_positions,
     get_account_summary,
     get_open_orders,
     get_recent_fills,
     get_bracket_order_status,
+    research_stock,
 ]
