@@ -6,7 +6,7 @@ from app.agent import ask
 
 
 def main():
-    print("IBKR Portfolio Agent (read-only). Type 'exit' to quit.\n")
+    print("IBKR Portfolio Agent. Buy orders require two 'yes' confirmations. Type 'exit' to quit.\n")
     thread_id = "cli-session"
     while True:
         question = input("> ").strip()

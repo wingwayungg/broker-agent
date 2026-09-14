@@ -17,7 +17,18 @@ from app.config import settings
 from app.models import AccountSummary, BracketOrderStatus, Fill, OpenOrder, Position
 
 
+_MOCK_QUOTES = {
+    "AAPL": 194.10,
+    "NVDA": 131.20,
+    "MSFT": 398.55,
+    "TSLA": 248.50,
+}
+
+
 class IBKRClient:
+    def __init__(self) -> None:
+        self._mock_order_id_counter = 2000
+
     def get_positions(self) -> list[Position]:
         if settings.use_mock_ibkr:
             return [
@@ -76,6 +87,35 @@ class IBKRClient:
                 parent_status="Filled",
                 take_profit_status="Submitted",
                 stop_loss_status="Submitted",
+            )
+        raise NotImplementedError("Wire up live IBKR connection here")
+
+    def get_quote(self, symbol: str) -> float:
+        """Current price for a symbol, used to size an order before it's
+        placed. Not tied to use_mock_ibkr's positions list — any symbol can
+        be quoted, not just ones already held."""
+        if settings.use_mock_ibkr:
+            return _MOCK_QUOTES.get(symbol.upper(), 100.00)
+        raise NotImplementedError("Wire up live IBKR connection here")
+
+    def place_order(
+        self,
+        symbol: str,
+        quantity: float,
+        action: str = "BUY",
+        order_type: str = "MKT",
+        limit_price: float | None = None,
+    ) -> OpenOrder:
+        if settings.use_mock_ibkr:
+            self._mock_order_id_counter += 1
+            return OpenOrder(
+                order_id=self._mock_order_id_counter,
+                symbol=symbol,
+                action=action,
+                order_type=order_type,
+                quantity=quantity,
+                limit_price=limit_price,
+                status="Submitted",
             )
         raise NotImplementedError("Wire up live IBKR connection here")
 

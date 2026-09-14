@@ -1,15 +1,34 @@
 """
-LangGraph-callable tools. Every tool here is read-only — there is no
-place_order, cancel_order, or modify_order tool defined anywhere in this
-project. That's a deliberate design choice, not an oversight: the agent
+LangGraph-callable tools. Most tools here are read-only. The one exception
+is buy_stock, the only order-placing capability in this project — there is
+still no sell_stock, cancel_order, or modify_order tool anywhere. The agent
 physically cannot take an action it doesn't have a tool for, regardless of
-what the prompt says or what the user asks. Enforce safety in code, not
-just in instructions.
+what the prompt says or what the user asks.
+
+buy_stock's safety isn't a prompt instruction ("please confirm twice") —
+it's enforced by the LangGraph engine itself via two interrupt() calls.
+interrupt() pauses graph execution mid-tool-call and returns control to
+whoever is driving the graph (see ask() in app/agent.py); nothing after
+that point in the function runs until a caller external to the LLM resumes
+it with Command(resume=...). The model that decided to call buy_stock never
+gets to see or answer its own confirmation prompts — it isn't invoked again
+until a real reply comes back through ask(). That's what makes this
+human-in-the-loop rather than just an LLM being told to ask nicely.
 """
 from langchain_core.tools import tool
+from langgraph.types import interrupt
 
 from app.ibkr_client import ibkr_client
 from app.research import research_stock as _research_stock
+
+
+def _is_affirmative(reply: object) -> bool:
+    return isinstance(reply, str) and reply.strip().lower() in {
+        "y",
+        "yes",
+        "confirm",
+        "confirmed",
+    }
 
 
 @tool
@@ -93,6 +112,75 @@ def research_stock(symbol: str) -> str:
     return _research_stock(symbol)
 
 
+@tool
+def buy_stock(symbol: str, quantity: float) -> str:
+    """Buy shares of a stock. This is the only order-placing tool in the
+    whole project — there is no sell/cancel/modify equivalent. It requires
+    two separate explicit human confirmations before anything is submitted;
+    that gate is enforced by the graph, not by this prompt, so calling this
+    tool does not itself place an order — it starts a confirmation sequence
+    that only completes if a real human replies affirmatively twice.
+    Call this as soon as the user gives an explicit buy instruction with
+    both a symbol and a quantity — do not pre-confirm with the user in text
+    first, the tool's own confirmation steps handle that."""
+    symbol = symbol.strip().upper()
+    if quantity <= 0:
+        return "Quantity must be a positive number of shares."
+
+    quote = ibkr_client.get_quote(symbol)
+    estimated_cost = round(quote * quantity, 2)
+    account = ibkr_client.get_account_summary()
+    if estimated_cost > account.buying_power:
+        return (
+            f"Cannot place order: estimated cost ${estimated_cost:,.2f} for "
+            f"{quantity} {symbol} @ ~${quote:.2f} exceeds available buying "
+            f"power of ${account.buying_power:,.2f}."
+        )
+
+    first_reply = interrupt(
+        {
+            "type": "confirm_buy_order",
+            "step": 1,
+            "of": 2,
+            "message": (
+                f"Confirm order: BUY {quantity} {symbol} @ ~${quote:.2f} "
+                f"(estimated cost ${estimated_cost:,.2f}). Reply 'yes' to "
+                f"continue or 'no' to cancel."
+            ),
+            "symbol": symbol,
+            "quantity": quantity,
+            "estimated_price": quote,
+            "estimated_cost": estimated_cost,
+        }
+    )
+    if not _is_affirmative(first_reply):
+        return "Order cancelled — first confirmation was not a clear yes."
+
+    second_reply = interrupt(
+        {
+            "type": "confirm_buy_order",
+            "step": 2,
+            "of": 2,
+            "message": (
+                f"Final confirmation — this will submit a real order: BUY "
+                f"{quantity} {symbol} @ ~${quote:.2f} (estimated cost "
+                f"${estimated_cost:,.2f}). This cannot be undone once "
+                f"submitted. Reply 'yes' to submit or 'no' to cancel."
+            ),
+            "symbol": symbol,
+            "quantity": quantity,
+        }
+    )
+    if not _is_affirmative(second_reply):
+        return "Order cancelled at final confirmation — nothing was submitted."
+
+    order = ibkr_client.place_order(symbol=symbol, quantity=quantity, action="BUY")
+    return (
+        f"Order submitted: BUY {quantity} {symbol} @ ~${quote:.2f} "
+        f"(order id {order.order_id}, status {order.status})."
+    )
+
+
 ALL_TOOLS = [
     get_positions,
     get_account_summary,
@@ -100,4 +188,5 @@ ALL_TOOLS = [
     get_recent_fills,
     get_bracket_order_status,
     research_stock,
+    buy_stock,
 ]

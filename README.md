@@ -4,9 +4,13 @@ A LangGraph agent that answers natural-language questions about live Interactive
 Brokers positions, account summary, and open orders — by orchestrating tool
 calls against your existing IBKR API wrapper.
 
-**Read-only by design.** This agent can query your account. It cannot place,
-modify, or cancel orders. That boundary is enforced in code (see
-`app/tools.py`), not just in the prompt.
+**Mostly read-only, by design.** This agent can query your account and place
+buy orders — nothing else. There is no sell, modify, or cancel tool at all.
+Buy orders require two separate explicit human confirmations before
+anything is submitted, and that gate is enforced by the LangGraph engine
+itself (see `app/tools.py`'s `buy_stock`, which pauses on `interrupt()`),
+not just by prompt instructions — the model that decides to call the tool
+is never invoked again until a real human reply comes back through `ask()`.
 
 ## Why LangGraph instead of a plain LangChain chain
 
@@ -26,6 +30,8 @@ LangGraph agent (app/agent.py)
    - tool node: executes IBKR tool calls
    - synthesis node: LLM turns tool output into a natural-language answer
    - loops back on follow-up questions within the same session
+   - buy_stock pauses the graph twice (interrupt()) for human confirmation
+     before it ever reaches the point of placing an order
         |
         v
 Tools (app/tools.py) -> IBKR client (app/ibkr_client.py)
@@ -42,7 +48,7 @@ ibkr-portfolio-agent/
 │   ├── config.py        # env vars, LLM provider config
 │   ├── models.py         # Pydantic models for all IBKR data
 │   ├── ibkr_client.py     # TODO: wire up to your existing IBKR script
-│   ├── tools.py           # LangGraph-callable tools (read-only)
+│   ├── tools.py           # LangGraph-callable tools (buy_stock is the only mutating one)
 │   ├── agent.py           # the LangGraph graph definition
 │   └── main.py            # FastAPI app exposing POST /ask
 ├── tests/
@@ -96,8 +102,20 @@ Of your two positions, NVDA is up 10.7% and would qualify. AAPL is up 3.6%
 and does not.
 
 > place a sell order for the NVDA position
-I can't place or modify orders — I'm read-only. You'd need to do that
-directly in TWS or via your trading script.
+I can't sell, modify, or cancel orders — the only order-placing tool I have
+is buy_stock. You'd need to sell directly in TWS or via your trading script.
+
+> buy 10 shares of AAPL
+Confirm order: BUY 10 AAPL @ ~$194.10 (estimated cost $1,941.00). Reply
+'yes' to continue or 'no' to cancel.
+
+> yes
+Final confirmation — this will submit a real order: BUY 10 AAPL @ ~$194.10
+(estimated cost $1,941.00). This cannot be undone once submitted. Reply
+'yes' to submit or 'no' to cancel.
+
+> yes
+Order submitted: BUY 10 AAPL @ ~$194.10 (order id 2001, status Submitted).
 ```
 
 ## Extending

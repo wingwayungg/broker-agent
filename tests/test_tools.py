@@ -6,7 +6,15 @@ point of the contract.
 """
 from unittest.mock import patch
 
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, MessagesState
+from langgraph.prebuilt import ToolNode
+from langgraph.types import Command
+
 from app.tools import (
+    ALL_TOOLS,
+    buy_stock,
     get_account_summary,
     get_bracket_order_status,
     get_open_orders,
@@ -65,3 +73,82 @@ def test_research_stock_returns_three_paragraph_summary():
         result = research_stock.invoke({"symbol": "aapl"})
     paragraphs = [p for p in result.split("\n\n") if p.strip()]
     assert len(paragraphs) == 3
+
+
+def test_buy_stock_is_the_only_order_placing_tool():
+    assert buy_stock in ALL_TOOLS
+    assert not any(t.name in {"sell_stock", "cancel_order", "modify_order"} for t in ALL_TOOLS)
+
+
+def _build_tool_graph():
+    """A minimal graph (no LLM) so buy_stock's interrupt()/resume flow can
+    be tested against the real LangGraph engine, not a mock of it."""
+    graph = StateGraph(MessagesState)
+    graph.add_node("tools", ToolNode([buy_stock]))
+    graph.set_entry_point("tools")
+    graph.set_finish_point("tools")
+    return graph.compile(checkpointer=MemorySaver())
+
+
+def _buy_call(symbol: str, quantity: float) -> dict:
+    return {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "buy_stock", "args": {"symbol": symbol, "quantity": quantity}, "id": "call1"}
+                ],
+            )
+        ]
+    }
+
+
+def test_buy_stock_requires_two_affirmative_confirmations_before_submitting():
+    graph = _build_tool_graph()
+    config = {"configurable": {"thread_id": "buy-1"}}
+
+    result = graph.invoke(_buy_call("AAPL", 10), config=config)
+    assert "__interrupt__" in result
+    assert result["__interrupt__"][0].value["step"] == 1
+
+    result = graph.invoke(Command(resume="yes"), config=config)
+    assert "__interrupt__" in result
+    assert result["__interrupt__"][0].value["step"] == 2
+
+    result = graph.invoke(Command(resume="yes"), config=config)
+    final = result["messages"][-1].content
+    assert "Order submitted" in final
+    assert "AAPL" in final
+
+
+def test_buy_stock_aborts_without_placing_order_on_first_no():
+    graph = _build_tool_graph()
+    config = {"configurable": {"thread_id": "buy-2"}}
+
+    graph.invoke(_buy_call("AAPL", 10), config=config)
+    result = graph.invoke(Command(resume="no"), config=config)
+    final = result["messages"][-1].content
+    assert "cancelled" in final.lower()
+    assert "Order submitted" not in final
+
+
+def test_buy_stock_aborts_without_placing_order_on_second_no():
+    graph = _build_tool_graph()
+    config = {"configurable": {"thread_id": "buy-3"}}
+
+    graph.invoke(_buy_call("AAPL", 10), config=config)
+    graph.invoke(Command(resume="yes"), config=config)
+    result = graph.invoke(Command(resume="no"), config=config)
+    final = result["messages"][-1].content
+    assert "cancelled" in final.lower()
+    assert "Order submitted" not in final
+
+
+def test_buy_stock_rejects_order_exceeding_buying_power_before_any_confirmation():
+    graph = _build_tool_graph()
+    config = {"configurable": {"thread_id": "buy-4"}}
+
+    result = graph.invoke(_buy_call("AAPL", 100_000), config=config)
+    assert "__interrupt__" not in result
+    final = result["messages"][-1].content
+    assert "exceeds available buying power" in final
