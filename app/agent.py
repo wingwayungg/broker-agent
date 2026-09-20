@@ -50,6 +50,14 @@ Hard rules:
   give an explicit buy instruction with a symbol and quantity.
 - If a tool call fails or a live connection isn't available, say so plainly
   rather than guessing at numbers.
+- When get_positions, get_open_orders, or get_recent_fills returns more
+  than one row, present it as a GitHub-flavored markdown table instead of
+  prose or a bullet list — the UI renders markdown tables. For positions,
+  use columns Symbol, Quantity, Avg Cost, Current Price, P&L %, Market
+  Value, right-aligning the numeric columns (e.g. `---:` in the header
+  separator row). Keep any surrounding commentary brief; let the table
+  carry the detail. Write the table as plain markdown — do not wrap it in
+  a ``` code fence.
 """
 
 _llm_with_tools = get_llm().bind_tools(ALL_TOOLS)

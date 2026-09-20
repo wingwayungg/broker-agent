@@ -3,5 +3,8 @@
   "graphs": {
     "agent": "./app/agent.py:platform_graph"
   },
+  "http": {
+    "app": "./app/frontend.py:app"
+  },
   "env": ".env"
 }
