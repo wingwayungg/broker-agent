@@ -72,7 +72,7 @@ def should_continue(state: MessagesState) -> str:
     return END
 
 
-def build_agent():
+def _build_graph() -> StateGraph:
     graph = StateGraph(MessagesState)
     graph.add_node("agent", call_model)
     graph.add_node("tools", ToolNode(ALL_TOOLS))
@@ -80,16 +80,27 @@ def build_agent():
     graph.set_entry_point("agent")
     graph.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
     graph.add_edge("tools", "agent")
+    return graph
 
+
+def build_agent():
     # MemorySaver keeps per-thread conversation state in memory so
     # follow-up questions in the same session have context. Swap for a
     # persistent checkpointer (e.g. SqliteSaver) if you want sessions to
-    # survive a restart.
+    # survive a restart. Only used for direct in-process invocation
+    # (cli.py, app/main.py) — see `platform_graph` below for the
+    # LangGraph API/Platform deployment path.
     checkpointer = MemorySaver()
-    return graph.compile(checkpointer=checkpointer)
+    return _build_graph().compile(checkpointer=checkpointer)
 
 
 agent = build_agent()
+
+# Entry point for `langgraph.json` (LangGraph API / `langgraph dev` /
+# LangGraph Platform). The platform manages checkpointing itself and
+# raises on load if the compiled graph already has a custom checkpointer
+# attached, so this variant is compiled without one.
+platform_graph = _build_graph().compile()
 
 
 def ask(question: str, thread_id: str = "default") -> str:
