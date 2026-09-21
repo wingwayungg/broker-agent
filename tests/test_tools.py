@@ -1,5 +1,5 @@
 """
-Tests against the mock IBKR client. These should keep passing unmodified
+Tests against the mock broker client. These should keep passing unmodified
 once you wire up the real client, as long as get_positions() etc. still
 return the Pydantic models defined in app/models.py — that's the whole
 point of the contract.
@@ -27,10 +27,10 @@ from app.tools import (
 
 @pytest.fixture(autouse=True)
 def _no_live_price_lookups():
-    """These are unit tests against the mock IBKR client, not integration
+    """These are unit tests against the mock broker client, not integration
     tests against Yahoo Finance — keep them offline and fast by always
     falling back to the static mock quotes."""
-    with patch("app.ibkr_client.fetch_current_price", return_value=None):
+    with patch("app.broker_client.fetch_current_price", return_value=None):
         yield
 
 

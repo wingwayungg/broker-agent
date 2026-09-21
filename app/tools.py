@@ -18,7 +18,7 @@ human-in-the-loop rather than just an LLM being told to ask nicely.
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 
-from app.ibkr_client import ibkr_client
+from app.broker_client import broker_client
 from app.research import research_stock as _research_stock
 
 
@@ -35,7 +35,7 @@ def _is_affirmative(reply: object) -> bool:
 def get_positions() -> str:
     """Get all current portfolio positions with quantity, cost basis,
     current price, and unrealized P&L percentage."""
-    positions = ibkr_client.get_positions()
+    positions = broker_client.get_positions()
     lines = []
     for p in positions:
         lines.append(
@@ -51,7 +51,7 @@ def get_positions() -> str:
 def get_account_summary() -> str:
     """Get account-level summary: net liquidation value, cash, buying
     power, and unrealized/realized P&L."""
-    s = ibkr_client.get_account_summary()
+    s = broker_client.get_account_summary()
     return (
         f"Net liquidation: ${s.net_liquidation:,.2f}\n"
         f"Total cash: ${s.total_cash:,.2f}\n"
@@ -64,7 +64,7 @@ def get_account_summary() -> str:
 @tool
 def get_open_orders() -> str:
     """Get all currently open (unfilled) orders."""
-    orders = ibkr_client.get_open_orders()
+    orders = broker_client.get_open_orders()
     if not orders:
         return "No open orders."
     lines = [
@@ -80,7 +80,7 @@ def get_open_orders() -> str:
 @tool
 def get_recent_fills() -> str:
     """Get recently filled orders (executions)."""
-    fills = ibkr_client.get_recent_fills()
+    fills = broker_client.get_recent_fills()
     if not fills:
         return "No recent fills."
     lines = [
@@ -94,7 +94,7 @@ def get_recent_fills() -> str:
 def get_bracket_order_status(symbol: str) -> str:
     """Get the status of a bracket order (parent, take-profit, and
     stop-loss legs) for a given symbol."""
-    status = ibkr_client.get_bracket_order_status(symbol)
+    status = broker_client.get_bracket_order_status(symbol)
     return (
         f"{status.symbol} bracket order — "
         f"parent: {status.parent_status}, "
@@ -127,9 +127,9 @@ def buy_stock(symbol: str, quantity: float) -> str:
     if quantity <= 0:
         return "Quantity must be a positive number of shares."
 
-    quote = ibkr_client.get_quote(symbol)
+    quote = broker_client.get_quote(symbol)
     estimated_cost = round(quote * quantity, 2)
-    account = ibkr_client.get_account_summary()
+    account = broker_client.get_account_summary()
     if estimated_cost > account.buying_power:
         return (
             f"Cannot place order: estimated cost ${estimated_cost:,.2f} for "
@@ -174,7 +174,7 @@ def buy_stock(symbol: str, quantity: float) -> str:
     if not _is_affirmative(second_reply):
         return "Order cancelled at final confirmation — nothing was submitted."
 
-    order = ibkr_client.place_order(symbol=symbol, quantity=quantity, action="BUY")
+    order = broker_client.place_order(symbol=symbol, quantity=quantity, action="BUY")
     return (
         f"Order submitted: BUY {quantity} {symbol} @ ~${quote:.2f} "
         f"(order id {order.order_id}, status {order.status})."

@@ -1,7 +1,7 @@
 """
 Pydantic models for everything the agent can query. These double as the
-return-type contract for app/ibkr_client.py — when you wire in your real
-IBKR script, match these shapes and nothing downstream needs to change.
+return-type contract for app/broker_client.py — when you wire in your real
+broker integration, match these shapes and nothing downstream needs to change.
 They also double as FastAPI response models if you expose raw endpoints
 later, so this isn't throwaway typing work.
 """

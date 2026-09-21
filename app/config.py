@@ -14,11 +14,11 @@ class Settings:
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
 
-    ibkr_host: str = os.getenv("IBKR_HOST", "127.0.0.1")
-    ibkr_port: int = int(os.getenv("IBKR_PORT", "7497"))
-    ibkr_client_id: int = int(os.getenv("IBKR_CLIENT_ID", "1"))
+    broker_host: str = os.getenv("BROKER_HOST", "127.0.0.1")
+    broker_port: int = int(os.getenv("BROKER_PORT", "7497"))
+    broker_client_id: int = int(os.getenv("BROKER_CLIENT_ID", "1"))
 
-    use_mock_ibkr: bool = os.getenv("USE_MOCK_IBKR", "true").lower() == "true"
+    use_mock_broker: bool = os.getenv("USE_MOCK_BROKER", "true").lower() == "true"
 
 
 settings = Settings()

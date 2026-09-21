@@ -1,7 +1,7 @@
 """
 Stock research via sub-agents.
 
-Separate from app/tools.py's IBKR tools, which read the user's own account.
+Separate from app/tools.py's broker tools, which read the user's own account.
 This module answers "tell me about TICKER" style questions by fanning out to
 up to three specialized researcher sub-agents (fundamentals, technicals,
 news/sentiment) run concurrently, then a synthesis pass condenses their notes

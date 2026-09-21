@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from app.agent import ask
 
-app = FastAPI(title="IBKR Portfolio Agent")
+app = FastAPI(title="Broker Portfolio Agent")
 
 
 class Question(BaseModel):

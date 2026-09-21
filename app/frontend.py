@@ -25,7 +25,7 @@ PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IBKR Portfolio Agent</title>
+<title>Broker Portfolio Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -33,7 +33,7 @@ PAGE = r"""<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <div class="title"><span class="logo"></span>IBKR Portfolio Agent</div>
+  <div class="title"><span class="logo"></span>Broker Portfolio Agent</div>
   <button id="reset" class="hidden">New conversation</button>
 </header>
 <main>
@@ -41,7 +41,7 @@ PAGE = r"""<!DOCTYPE html>
     <div id="log-inner">
       <div class="empty-hero">
         <span class="logo"></span>
-        <h2>IBKR Portfolio Agent</h2>
+        <h2>Broker Portfolio Agent</h2>
         <p>Ask about your positions, research a ticker, or place a trade.</p>
       </div>
     </div>
@@ -363,7 +363,7 @@ resetBtn.onclick = () => {
   log.classList.add("empty");
   logInner.innerHTML = `<div class="empty-hero">
         <span class="logo"></span>
-        <h2>IBKR Portfolio Agent</h2>
+        <h2>Broker Portfolio Agent</h2>
         <p>Ask about your positions, research a ticker, or place a trade.</p>
       </div>`;
 };
