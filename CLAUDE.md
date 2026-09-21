@@ -21,30 +21,63 @@ There is no linter/formatter config. `.env` holds `GROQ_API_KEY`, `TAVILY_API_KE
 
 ## Architecture
 
-Single LangGraph `agent -> tools -> agent` loop over `MessagesState` (`app/agent.py`), with tools in `app/tools.py` calling a `BrokerClient` singleton (`app/broker_client.py`) that returns Pydantic models from `app/models.py`. Read the module docstrings — each file explains *why* it is shaped the way it is, and those rationales (mock-first broker contract, no MCP/Tavily SDK, Starlette-not-FastAPI frontend) are deliberate.
+Read the module docstrings first — each file explains *why* it is shaped the way it is (mock-first broker contract, `requests` instead of MCP/Tavily SDKs, Starlette-not-FastAPI frontend), and those rationales are deliberate.
+
+### Layers and dependency direction
+
+```
+entry points   cli.py   app/main.py (FastAPI /ask)   app/frontend.py (browser UI, via LangGraph API)
+                  \          |                              |
+                   ask() in app/agent.py           langgraph.json -> platform_graph
+                              \                     /
+graph            app/agent.py   (agent node <-> ToolNode loop over MessagesState)
+                              |
+tools            app/tools.py   (7 @tool functions; ALL_TOOLS)
+                     /                    \
+domain    app/broker_client.py        app/research.py  (3 sub-agent LLM calls + synthesis)
+                     \                    /
+data           app/market_data.py  (Yahoo chart endpoint, Tavily /search)
+                              |
+config           app/config.py  (settings, get_llm())      app/models.py (Pydantic contract)
+```
+
+Imports only go downward. `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
+
+### One turn, end to end
+
+1. Caller sends text for a `thread_id`. If the thread is paused on an interrupt, the text is a **resume value**; otherwise it is a new `("user", text)` message.
+2. `call_model` prepends `SYSTEM_PROMPT` if the first message isn't a system message, invokes the tool-bound LLM, and `should_continue` routes to `ToolNode` if the reply has `tool_calls`, else `END`.
+3. `ToolNode` runs the tool. Read-only tools return formatted strings that the LLM turns into prose/tables on the next loop. `buy_stock` may instead hit `interrupt()`, which surfaces as `__interrupt__` in the result — the caller shows `value["message"]` and waits for a human.
+4. Loop continues until the model replies without tool calls.
+
+Memory is per `thread_id` and in-process only (`MemorySaver`, or LangGraph API's in-memory store under `langgraph dev`). A restart wipes it; the browser UI handles this by catching a 404 on its stored thread and transparently starting a new one.
 
 ### Two compiled graphs, two entry paths
 
 `app/agent.py` exports both `agent` (compiled with `MemorySaver`, used by `cli.py` and `app/main.py` via `ask()`) and `platform_graph` (compiled with **no** checkpointer, referenced by `langgraph.json`). LangGraph Platform/`langgraph dev` supplies its own checkpointer and errors if the graph already has one, so don't collapse these into one.
 
-- **In-process path** (`ask()`): infers whether the thread is paused on an interrupt via `agent.get_state(config).interrupts` and sends `Command(resume=text)` vs a new user message accordingly. Callers just keep passing whatever the user typed.
-- **LangGraph API path** (`app/frontend.py`): the browser page posts straight to `/threads/{id}/runs/stream`, tracks `pendingInterrupt` from the previous response's `__interrupt__`, and chooses `input` vs `command.resume` explicitly. It never touches `ask()` or `app/main.py`. `frontend.py` is mounted via `langgraph.json`'s `http.app` hook and is a Starlette app on purpose (FastAPI would shadow LangGraph's `/docs`).
+- **In-process path** (`ask()`): infers whether the thread is paused via `agent.get_state(config).interrupts` and sends `Command(resume=text)` vs a new user message accordingly. Callers just keep passing whatever the user typed — including "yes"/"no".
+- **LangGraph API path** (`app/frontend.py`): the browser page posts straight to `/threads/{id}/runs/stream` with `stream_mode: ["messages", "updates"]`, tracks `pendingInterrupt` from the previous response's `__interrupt__` update, and chooses `input` vs `command.resume` explicitly. It never touches `ask()` or `app/main.py`. `frontend.py` is mounted via `langgraph.json`'s `http.app` hook and is a Starlette app on purpose (FastAPI would shadow LangGraph's `/docs`). Under `langgraph dev`, `app/main.py` is not served at all.
 
 ### `buy_stock` is the only mutating tool, gated by `interrupt()`
 
-The safety model is structural, not prompt-based: `buy_stock` calls `interrupt()` twice, so the graph pauses and the LLM is not re-invoked until an external caller resumes. There is intentionally no sell/modify/cancel tool, and `test_buy_stock_is_the_only_order_placing_tool` asserts that. Anything that changes `ALL_TOOLS`, the interrupt payload shape (`{"type": "confirm_buy_order", "step", "of", "message", ...}`), or `_is_affirmative` affects `ask()`, the frontend, and the system prompt together.
+The safety model is structural, not prompt-based: `buy_stock` validates quantity and buying power *before* any interrupt (so an unaffordable order returns immediately with no confirmation), then calls `interrupt()` twice. Each pause returns control to the caller; the LLM is not re-invoked until an external resume arrives, so it can never answer its own confirmation. Only `_is_affirmative` replies (`y`/`yes`/`confirm`/`confirmed`, case-insensitive) advance; anything else cancels. There is intentionally no sell/modify/cancel tool, and `test_buy_stock_is_the_only_order_placing_tool` asserts that.
 
-Tests exercise the interrupt flow against the real LangGraph engine by building a tiny `ToolNode`-only graph (`tests/test_tools.py::_build_tool_graph`) rather than mocking `interrupt`.
+The interrupt payload shape (`{"type": "confirm_buy_order", "step": 1|2, "of": 2, "message": ..., "symbol", "quantity", ...}`) is consumed by both `ask()` (reads `["message"]`) and the frontend (reads `value.message`, renders Yes/No buttons) — change it in all three places together.
+
+Tests exercise this against the real LangGraph engine by building a tiny `ToolNode`-only graph (`tests/test_tools.py::_build_tool_graph`) and driving it with a hand-built `AIMessage` carrying a `buy_stock` tool call, rather than mocking `interrupt`.
 
 ### Research sub-agents and live data
 
-`research_stock` (`app/research.py`) fans out three narrow LLM calls (fundamentals, technicals, news) in a `ThreadPoolExecutor`, each fed live context from `app/market_data.py` (Yahoo chart endpoint for prices, Tavily `/search` for web), then synthesizes into exactly three paragraphs. Fetchers degrade to bracketed `[... unavailable: ...]` strings rather than raising, and the sub-agent prompts tell the model to say so rather than fill from memory. `chartPreviousClose` from Yahoo is *not* yesterday's close (it's the range start); previous close comes from `closes[-2]`.
+`research_stock` (`app/research.py`) is a fixed pipeline, not an agent: `_RESEARCHERS` (role → system prompt) and `_CONTEXT_FETCHERS` (role → live-data callable) are keyed by the same three roles (fundamentals, technicals, news_sentiment). Each role runs in a `ThreadPoolExecutor` as one LLM call fed its fetched context, then a synthesis call condenses the notes into exactly three paragraphs. Adding a role means adding a matching entry to both dicts.
 
-The mock `BrokerClient` also uses `fetch_current_price` for live position/quote prices, falling back to `_MOCK_QUOTES`. Tests patch `app.broker_client.fetch_current_price` (autouse fixture in `test_tools.py`) to stay offline.
+`app/market_data.py` fetchers never raise to the caller: `fetch_price_snapshot`/`fetch_web_context` return bracketed `[... unavailable: ...]` strings, and `fetch_current_price` returns `None`. The sub-agent prompts tell the model to say data is missing rather than fill from training memory. Yahoo's `chartPreviousClose` is the range start, not yesterday's close — previous close is `closes[-2]`.
+
+The mock `BrokerClient` also uses `fetch_current_price` for live position/quote prices, falling back to `_MOCK_QUOTES` only on `None` (a real `0.0` is preserved). Tests patch `app.broker_client.fetch_current_price` (autouse fixture in `test_tools.py`) and `app.market_data.requests.get/post` to stay offline.
 
 ### LLM provider
 
-`app/config.get_llm()` is the single switch (`groq` default with `openai/gpt-oss-120b`, `gemini` alternative). `app/agent.py` binds tools at import time, so importing it instantiates the provider client; tests avoid importing `app.agent` and go through `app.tools` directly.
+`app/config.get_llm()` is the single switch (`groq` default with `openai/gpt-oss-120b`, `gemini` alternative) and is called fresh for every research sub-agent call. `app/agent.py` binds tools at import time (`_llm_with_tools`), so importing it instantiates the provider client; tests avoid importing `app.agent` and go through `app.tools` directly.
 
 ## Conventions
 
