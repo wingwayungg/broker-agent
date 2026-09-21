@@ -15,6 +15,18 @@ relying on what the model "remembers" about a ticker. Two free sources:
 - Tavily web search, for anything the chart endpoint can't provide:
   news/sentiment, and fundamentals numbers like recent revenue/earnings/
   margins, which are only reliably found in current web content anyway.
+
+Both calls stay plain `requests` rather than going through MCP. Every
+Yahoo Finance MCP server is an unofficial community wrapper around the same
+undocumented endpoint `_fetch_chart_data` already hits, so routing through
+one adds a dependency chain (MCP SDK + subprocess/sidecar + cookie/crumb
+handling) without reducing the "Yahoo may break this" risk. More
+fundamentally, `fetch_price_snapshot` and `fetch_web_context` are called
+deterministically from `_CONTEXT_FETCHERS` in app/research.py with a fixed
+argument, never chosen by the model at runtime — MCP's actual value (a
+model discovering and picking among tools) doesn't apply to either. One
+sync `requests.get` with a timeout is also simply cheaper on this 512MB Fly
+VM than an async session lifecycle bridged into a sync codebase.
 """
 import requests
 

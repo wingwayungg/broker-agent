@@ -19,6 +19,19 @@ followed by "which of those are red today?" requires remembering the prior
 tool result. LangGraph models this as a stateful graph with memory, rather
 than a one-shot chain, which is what makes follow-up questions work.
 
+## Why `requests` instead of MCP for market data
+
+`app/market_data.py` calls Yahoo Finance and Tavily directly with `requests`
+rather than through MCP servers. Both calls are invoked deterministically
+from fixed positions in `app/research.py` — never chosen by the model at
+runtime — so MCP's core value (runtime tool discovery, a model picking
+among capabilities) doesn't apply. Every Yahoo Finance MCP server is also
+an unofficial wrapper around the same undocumented endpoint this code
+already hits, so going through one would add a dependency chain without
+reducing the "Yahoo may break this" risk. A plain sync `requests.get` is
+also cheaper than an async session lifecycle bridged into this otherwise
+sync codebase, on the 512MB Fly VM this runs on.
+
 ## Architecture
 
 ```

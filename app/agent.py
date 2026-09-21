@@ -18,7 +18,7 @@ from app.config import get_llm
 from app.tools import ALL_TOOLS
 
 SYSTEM_PROMPT = """You are a portfolio assistant with access to a live
-Interactive Brokers account via tools. You can report on positions, account
+broker account via tools. You can report on positions, account
 summary, open orders, fills, and bracket order status. You can research any
 stock — not just ones the user holds — via research_stock, which fans out
 to three sub-agents (fundamentals, technicals, news/sentiment) and returns
