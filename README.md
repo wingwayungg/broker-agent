@@ -32,6 +32,12 @@ reducing the "Yahoo may break this" risk. A plain sync `requests.get` is
 also cheaper than an async session lifecycle bridged into this otherwise
 sync codebase, on the 512MB Fly VM this runs on.
 
+The same logic rules out Tavily's own SDKs: `langchain-tavily` wraps the
+call as a model-selectable LangChain tool, which buys nothing for a query
+that's always invoked the same way with a fixed argument, and
+`tavily-python` is just a thin wrapper around the one `/search` POST this
+code already makes directly.
+
 ## Architecture
 
 ```

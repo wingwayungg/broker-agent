@@ -27,6 +27,14 @@ argument, never chosen by the model at runtime — MCP's actual value (a
 model discovering and picking among tools) doesn't apply to either. One
 sync `requests.get` with a timeout is also simply cheaper on this 512MB Fly
 VM than an async session lifecycle bridged into a sync codebase.
+
+Tavily's own SDKs are skipped for the same reason. `langchain-tavily`
+wraps the call as a LangChain tool meant for a model to discover and pick
+at runtime, but `fetch_web_context` is invoked deterministically with a
+fixed query, never model-chosen, so that abstraction has nothing to add.
+`tavily-python` is a thin convenience wrapper around the same single POST
+to `/search`; for one hardcoded call with a fixed payload it's an extra
+dependency without an extra capability.
 """
 import requests
 
