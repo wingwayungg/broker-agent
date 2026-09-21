@@ -9,6 +9,10 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 *.ipynb
+notebooks/
+tests/
+README.md
+.claude
 .vscode/
 .idea/
 .DS_Store
