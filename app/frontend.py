@@ -21,23 +21,37 @@ from starlette.routing import Route
 
 STYLE_CSS = (Path(__file__).parent / "static" / "style.css").read_text()
 
-# Ascending candlestick-bar mark. Inline (fill="currentColor") for the
-# in-page logo so it follows --accent; the favicon variant hardcodes the
-# same color since a data: URI has no page CSS context.
+# 3-candlestick mark (irregular heights, mixed hollow/solid bodies). Inline
+# (stroke/fill="currentColor") for the in-page logo so it follows --accent;
+# the favicon variant hardcodes the same color since a data: URI has no
+# page CSS context. Each wick is drawn as two segments (above/below the
+# body) rather than one line so it doesn't cut through the hollow body.
 LOGO_SVG = (
-    '<span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
-    '<rect width="24" height="24" rx="6" fill="currentColor"/>'
-    '<rect x="5" y="14" width="3.2" height="5" rx="1" fill="white"/>'
-    '<rect x="10.4" y="10" width="3.2" height="9" rx="1" fill="white"/>'
-    '<rect x="15.8" y="6" width="3.2" height="13" rx="1" fill="white"/>'
+    '<span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" '
+    'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">'
+    '<line x1="6" y1="13" x2="6" y2="14"/>'
+    '<line x1="6" y1="18" x2="6" y2="20"/>'
+    '<rect x="4" y="14" width="4" height="4" fill="currentColor" stroke="none"/>'
+    '<line x1="12" y1="3" x2="12" y2="6"/>'
+    '<line x1="12" y1="13" x2="12" y2="17"/>'
+    '<rect x="10" y="6" width="4" height="7"/>'
+    '<line x1="18" y1="8" x2="18" y2="10"/>'
+    '<line x1="18" y1="16" x2="18" y2="19"/>'
+    '<rect x="16" y="10" width="4" height="6" fill="currentColor" stroke="none"/>'
     "</svg></span>"
 )
 _FAVICON_SVG = (
-    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
-    "<rect width='24' height='24' rx='6' fill='#0a0a0a'/>"
-    "<rect x='5' y='14' width='3.2' height='5' rx='1' fill='white'/>"
-    "<rect x='10.4' y='10' width='3.2' height='9' rx='1' fill='white'/>"
-    "<rect x='15.8' y='6' width='3.2' height='13' rx='1' fill='white'/>"
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
+    "fill='none' stroke='#0a0a0a' stroke-width='1.3' stroke-linecap='round'>"
+    "<line x1='6' y1='13' x2='6' y2='14'/>"
+    "<line x1='6' y1='18' x2='6' y2='20'/>"
+    "<rect x='4' y='14' width='4' height='4' fill='#0a0a0a' stroke='none'/>"
+    "<line x1='12' y1='3' x2='12' y2='6'/>"
+    "<line x1='12' y1='13' x2='12' y2='17'/>"
+    "<rect x='10' y='6' width='4' height='7'/>"
+    "<line x1='18' y1='8' x2='18' y2='10'/>"
+    "<line x1='18' y1='16' x2='18' y2='19'/>"
+    "<rect x='16' y='10' width='4' height='6' fill='#0a0a0a' stroke='none'/>"
     "</svg>"
 )
 FAVICON_HREF = "data:image/svg+xml," + quote(_FAVICON_SVG)
