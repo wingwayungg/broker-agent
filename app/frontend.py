@@ -13,6 +13,7 @@ page can know from the previous response's __interrupt__ field which one
 to send next, instead of guessing at plain text the way ask() does.
 """
 from pathlib import Path
+from urllib.parse import quote
 
 from starlette.applications import Starlette
 from starlette.responses import HTMLResponse, Response
@@ -20,12 +21,34 @@ from starlette.routing import Route
 
 STYLE_CSS = (Path(__file__).parent / "static" / "style.css").read_text()
 
+# Ascending candlestick-bar mark. Inline (fill="currentColor") for the
+# in-page logo so it follows --accent; the favicon variant hardcodes the
+# same color since a data: URI has no page CSS context.
+LOGO_SVG = (
+    '<span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+    '<rect width="24" height="24" rx="6" fill="currentColor"/>'
+    '<rect x="5" y="14" width="3.2" height="5" rx="1" fill="white"/>'
+    '<rect x="10.4" y="10" width="3.2" height="9" rx="1" fill="white"/>'
+    '<rect x="15.8" y="6" width="3.2" height="13" rx="1" fill="white"/>'
+    "</svg></span>"
+)
+_FAVICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
+    "<rect width='24' height='24' rx='6' fill='#0a0a0a'/>"
+    "<rect x='5' y='14' width='3.2' height='5' rx='1' fill='white'/>"
+    "<rect x='10.4' y='10' width='3.2' height='9' rx='1' fill='white'/>"
+    "<rect x='15.8' y='6' width='3.2' height='13' rx='1' fill='white'/>"
+    "</svg>"
+)
+FAVICON_HREF = "data:image/svg+xml," + quote(_FAVICON_SVG)
+
 PAGE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Broker Portfolio Agent</title>
+<link rel="icon" type="image/svg+xml" href="__FAVICON_HREF__">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -372,6 +395,10 @@ ensureThread();
 </script>
 </body>
 </html>"""
+
+PAGE = PAGE.replace("__FAVICON_HREF__", FAVICON_HREF).replace(
+    '<span class="logo"></span>', LOGO_SVG
+)
 
 
 async def index(request):
