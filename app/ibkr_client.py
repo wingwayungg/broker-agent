@@ -11,12 +11,16 @@ If you already have a class wrapping EClient/EWrapper, the cleanest path
 is usually to import it here and call its methods from inside these
 wrappers, translating its raw responses into the Pydantic models below.
 """
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from app.config import settings
+from app.market_data import fetch_current_price
 from app.models import AccountSummary, BracketOrderStatus, Fill, OpenOrder, Position
 
 
+# Fallback prices used only when a live quote can't be fetched (e.g. no
+# network), so the mock client still demos something reasonable.
 _MOCK_QUOTES = {
     "AAPL": 194.10,
     "NVDA": 131.20,
@@ -25,16 +29,27 @@ _MOCK_QUOTES = {
 }
 
 
+def _live_or_fallback_price(symbol: str) -> float:
+    price = fetch_current_price(symbol)
+    return price if price is not None else _MOCK_QUOTES.get(symbol.upper(), 100.00)
+
+
 class IBKRClient:
     def __init__(self) -> None:
         self._mock_order_id_counter = 2000
 
     def get_positions(self) -> list[Position]:
         if settings.use_mock_ibkr:
+            holdings = [
+                ("AAPL", 150, 187.32),
+                ("NVDA", 40, 118.50),
+                ("MSFT", 60, 402.10),
+            ]
+            with ThreadPoolExecutor(max_workers=len(holdings)) as pool:
+                prices = pool.map(_live_or_fallback_price, [symbol for symbol, _, _ in holdings])
             return [
-                Position(symbol="AAPL", quantity=150, avg_cost=187.32, current_price=194.10),
-                Position(symbol="NVDA", quantity=40, avg_cost=118.50, current_price=131.20),
-                Position(symbol="MSFT", quantity=60, avg_cost=402.10, current_price=398.55),
+                Position(symbol=symbol, quantity=quantity, avg_cost=avg_cost, current_price=price)
+                for (symbol, quantity, avg_cost), price in zip(holdings, prices)
             ]
         # TODO: replace with real IBKR call, e.g.:
         # raw = self._real_client.reqPositions()
@@ -95,7 +110,7 @@ class IBKRClient:
         placed. Not tied to use_mock_ibkr's positions list — any symbol can
         be quoted, not just ones already held."""
         if settings.use_mock_ibkr:
-            return _MOCK_QUOTES.get(symbol.upper(), 100.00)
+            return _live_or_fallback_price(symbol)
         raise NotImplementedError("Wire up live IBKR connection here")
 
     def place_order(

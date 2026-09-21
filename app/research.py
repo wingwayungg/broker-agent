@@ -17,28 +17,39 @@ from concurrent.futures import ThreadPoolExecutor
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config import get_llm
+from app.market_data import fetch_price_snapshot, fetch_web_context
 
 _RESEARCHERS = {
     "fundamentals": (
-        "You are a fundamentals research analyst. Given a stock ticker, "
-        "summarize what you know about the company's business model, recent "
-        "revenue/earnings trends, margins, and valuation, in 3-4 sentences. "
-        "State clearly when you're unsure of exact recent figures rather "
-        "than inventing numbers."
+        "You are a fundamentals research analyst. Given a stock ticker and "
+        "live web search results about its recent earnings, revenue, and "
+        "margins, summarize the company's business model and how those "
+        "figures look, in 3-4 sentences. Base numbers strictly on the "
+        "supplied data — if it doesn't cover something, say so rather than "
+        "filling the gap from memory."
     ),
     "technicals": (
-        "You are a technical/price-action analyst. Given a stock ticker, "
-        "summarize its general recent price trend, volatility, and any "
-        "well-known support/resistance behavior, in 3-4 sentences. State "
-        "clearly when you don't have current price data rather than "
-        "inventing numbers."
+        "You are a technical/price-action analyst. Given a stock ticker and "
+        "a live price snapshot (current price, day range, 52-week range, "
+        "volume, recent trend), summarize the current price picture in 3-4 "
+        "sentences. Base numbers strictly on the supplied snapshot — if it's "
+        "marked unavailable, say so rather than filling the gap from memory."
     ),
     "news_sentiment": (
-        "You are a news and sentiment analyst. Given a stock ticker, "
-        "summarize recent notable news, catalysts, or shifts in analyst or "
-        "market sentiment you're aware of, in 3-4 sentences. State clearly "
-        "when you don't have up-to-date news rather than inventing events."
+        "You are a news and sentiment analyst. Given a stock ticker and "
+        "live web search results about recent news, summarize notable "
+        "catalysts or shifts in sentiment in 3-4 sentences. Base this "
+        "strictly on the supplied results — if none were found, say so "
+        "rather than inventing events."
     ),
+}
+
+_CONTEXT_FETCHERS = {
+    "fundamentals": lambda symbol: fetch_web_context(
+        symbol, "latest quarterly earnings, revenue, and profit margins"
+    ),
+    "technicals": lambda symbol: fetch_price_snapshot(symbol),
+    "news_sentiment": lambda symbol: fetch_web_context(symbol, "recent news and catalysts"),
 }
 
 _SYNTHESIS_PROMPT = (
@@ -53,8 +64,10 @@ _SYNTHESIS_PROMPT = (
 
 
 def _run_researcher(role: str, system_prompt: str, symbol: str) -> str:
+    live_data = _CONTEXT_FETCHERS[role](symbol)
+    human_content = f"Ticker: {symbol}\n\nLive data pulled just now:\n{live_data}"
     response = get_llm().invoke(
-        [SystemMessage(content=system_prompt), HumanMessage(content=f"Ticker: {symbol}")]
+        [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     )
     return f"[{role}]\n{response.content}"
 

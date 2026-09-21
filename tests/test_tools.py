@@ -6,6 +6,7 @@ point of the contract.
 """
 from unittest.mock import patch
 
+import pytest
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, MessagesState
@@ -22,6 +23,15 @@ from app.tools import (
     get_recent_fills,
     research_stock,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_live_price_lookups():
+    """These are unit tests against the mock IBKR client, not integration
+    tests against Yahoo Finance — keep them offline and fast by always
+    falling back to the static mock quotes."""
+    with patch("app.ibkr_client.fetch_current_price", return_value=None):
+        yield
 
 
 def test_get_positions_returns_expected_symbols():
@@ -69,7 +79,9 @@ class _FakeLLM:
 
 
 def test_research_stock_returns_three_paragraph_summary():
-    with patch("app.research.get_llm", return_value=_FakeLLM()):
+    with patch("app.research.get_llm", return_value=_FakeLLM()), patch(
+        "app.research.fetch_price_snapshot", return_value="mock price snapshot"
+    ), patch("app.research.fetch_web_context", return_value="mock web context"):
         result = research_stock.invoke({"symbol": "aapl"})
     paragraphs = [p for p in result.split("\n\n") if p.strip()]
     assert len(paragraphs) == 3

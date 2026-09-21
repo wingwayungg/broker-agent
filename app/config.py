@@ -12,6 +12,7 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "groq")
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
 
     ibkr_host: str = os.getenv("IBKR_HOST", "127.0.0.1")
     ibkr_port: int = int(os.getenv("IBKR_PORT", "7497"))
