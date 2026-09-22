@@ -1,0 +1,21 @@
+# Render Blueprint: runs the existing Dockerfile (`langgraph dev` on :2024)
+# as a free web service. Secrets are marked sync: false so Render prompts
+# for them on first deploy instead of storing them in the repo.
+services:
+  - type: web
+    name: broker-portfolio-agent
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /ok
+    envVars:
+      - key: PORT
+        value: "2024"
+      - key: LLM_PROVIDER
+        value: groq
+      - key: USE_MOCK_BROKER
+        value: "true"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
