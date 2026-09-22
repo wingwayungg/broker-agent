@@ -25,8 +25,8 @@ fundamentally, `fetch_price_snapshot` and `fetch_web_context` are called
 deterministically from `_CONTEXT_FETCHERS` in app/research.py with a fixed
 argument, never chosen by the model at runtime — MCP's actual value (a
 model discovering and picking among tools) doesn't apply to either. One
-sync `requests.get` with a timeout is also simply cheaper on this 512MB Fly
-VM than an async session lifecycle bridged into a sync codebase.
+sync `requests.get` with a timeout is also simply cheaper on this 512MB
+Render free-tier instance than an async session lifecycle bridged into a sync codebase.
 
 Tavily's own SDKs are skipped for the same reason. `langchain-tavily`
 wraps the call as a LangChain tool meant for a model to discover and pick

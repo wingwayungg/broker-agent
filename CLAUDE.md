@@ -13,9 +13,10 @@ python -m pytest tests/test_tools.py::test_buy_stock_requires_two_affirmative_co
 
 python cli.py                       # terminal chat loop (in-process, MemorySaver)
 uvicorn app.main:app --reload       # FastAPI: POST /ask {"question": ..., "thread_id": ...}
-langgraph dev                       # LangGraph API on :2024 + browser chat UI at / (what Fly runs)
-fly deploy                          # deploys the Dockerfile; app name in fly.toml
+langgraph dev                       # LangGraph API on :2024 + browser chat UI at / (what Render runs)
 ```
+
+Render deploys are triggered by pushing to the connected branch (`render.yaml` blueprint; service name in there).
 
 There is no linter/formatter config. `.env` holds `GROQ_API_KEY`, `TAVILY_API_KEY`, optional `LLM_PROVIDER`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
 
@@ -83,4 +84,4 @@ The mock `BrokerClient` also uses `fetch_current_price` for live position/quote 
 
 - The system prompt in `app/agent.py` asks for GFM tables for multi-row results; the frontend has a hand-rolled markdown renderer (`renderMarkdown`) that only handles paragraphs, inline bold/italic/code, lists, and tables — extend it if the prompt starts requesting other markdown.
 - The agent must not give buy/sell/hold advice; trading-decision questions are routed to `research_stock`. Keep new prompts and tool docstrings consistent with that.
-- Deployment target is a 512MB Fly VM (`fly.toml`); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, notebooks, and README from the image.
+- Deployment target is a 512MB Render free-tier instance (`render.yaml`); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, notebooks, and README from the image.
