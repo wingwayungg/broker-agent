@@ -4,13 +4,15 @@ Minimal browser chat UI, mounted onto the LangGraph API server via the
 FastAPI) so it doesn't register its own /docs, /redoc, /openapi.json and
 shadow LangGraph's own API explorer at those paths.
 
-The page talks directly to the LangGraph API's own /threads and
-/threads/{id}/runs/wait endpoints (same origin, so no CORS needed) rather
-than going through app/main.py's ask() helper. That matters for
-buy_stock's two-step confirmation: the API distinguishes a fresh message
-(input) from a resume (command.resume) as separate request fields, so the
-page can know from the previous response's __interrupt__ field which one
-to send next, instead of guessing at plain text the way ask() does.
+The page talks directly to the LangGraph API's own /threads,
+/threads/{id}/runs/stream and /threads/{id}/state endpoints (same origin,
+so no CORS needed) rather than going through app/main.py's ask() helper.
+That matters for buy_stock's two-step confirmation: the API distinguishes a
+fresh message (input) from a resume (command.resume) as separate request
+fields, so the page can know from the previous response's __interrupt__
+field which one to send next, instead of guessing at plain text the way
+ask() does. On load the page rebuilds its log from the thread's state (and
+re-joins a still-running run), so a reload mid-reply doesn't blank it.
 """
 import hashlib
 from pathlib import Path

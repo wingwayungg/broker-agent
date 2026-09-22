@@ -2,6 +2,8 @@ let threadId = null;
 let pendingInterrupt = false;
 let busy = false;
 
+const STREAM_MODES = ["messages", "updates"];
+
 const log = document.getElementById("log");
 const logInner = document.getElementById("log-inner");
 const input = document.getElementById("input");
@@ -182,17 +184,71 @@ function parseSSEEvent(raw) {
 
 function postRun(text, asResume) {
     const body = asResume
-        ? { assistant_id: "agent", command: { resume: text }, stream_mode: ["messages", "updates"] }
+        ? { assistant_id: "agent", command: { resume: text }, stream_mode: STREAM_MODES }
         : {
               assistant_id: "agent",
               input: { messages: [{ role: "user", content: text }] },
-              stream_mode: ["messages", "updates"],
+              stream_mode: STREAM_MODES,
           };
     return fetch(`/threads/${threadId}/runs/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
     });
+}
+
+// Consumes a run's SSE stream, rendering into the log as events arrive:
+// `status` is the placeholder bubble ("Thinking...") that gets retitled for
+// tool calls and replaced by the streaming assistant reply, or removed if a
+// confirmation interrupt arrives instead. Shared by a fresh POST run and by
+// re-joining an in-flight run after a page reload.
+async function consumeStream(res, status) {
+    let assistantDiv = null;
+    let assistantMsgId = null;
+    let interrupted = false;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        // Server sends CRLF line endings; normalize before boundary-matching.
+        buf += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) !== -1) {
+            const record = parseSSEEvent(buf.slice(0, idx));
+            buf = buf.slice(idx + 2);
+            if (!record) continue;
+
+            if (record.eventType === "updates" && record.data.__interrupt__) {
+                interrupted = true;
+                pendingInterrupt = true;
+                status.remove();
+                if (assistantDiv) assistantDiv.remove();
+                addConfirm(record.data.__interrupt__[0].value.message);
+            } else if (record.eventType === "messages/partial" || record.eventType === "messages/complete") {
+                const msg = record.data[0];
+                if (msg?.type !== "ai") continue;
+                if (msg.id !== assistantMsgId) {
+                    assistantMsgId = msg.id;
+                    if (!msg.content && msg.tool_calls?.length) continue;
+                }
+                if (msg.content) {
+                    if (!assistantDiv) {
+                        status.remove();
+                        assistantDiv = addMsg(msg.content, "assistant");
+                    } else {
+                        setContent(assistantDiv, msg.content, "assistant");
+                    }
+                    log.scrollTop = log.scrollHeight;
+                } else if (msg.tool_calls?.length && !assistantDiv) {
+                    status.textContent = "Calling " + msg.tool_calls[0].name + "...";
+                }
+            }
+        }
+    }
+    return { interrupted, assistantDiv };
 }
 
 async function sendMessage(text) {
@@ -203,13 +259,7 @@ async function sendMessage(text) {
 
     addMsg(text, "user");
     resetBtn.classList.remove("hidden");
-    // Status bubble reused for "thinking" / "calling a tool" updates, then
-    // either replaced by the streaming assistant reply or removed if a
-    // confirmation interrupt arrives instead.
     let status = addMsg("Thinking...", "system");
-    let assistantDiv = null;
-    let assistantMsgId = null;
-    let interrupted = false;
 
     try {
         await ensureThread();
@@ -235,48 +285,7 @@ async function sendMessage(text) {
             return;
         }
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            // Server sends CRLF line endings; normalize before boundary-matching.
-            buf += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
-            let idx;
-            while ((idx = buf.indexOf("\n\n")) !== -1) {
-                const record = parseSSEEvent(buf.slice(0, idx));
-                buf = buf.slice(idx + 2);
-                if (!record) continue;
-
-                if (record.eventType === "updates" && record.data.__interrupt__) {
-                    interrupted = true;
-                    pendingInterrupt = true;
-                    status.remove();
-                    if (assistantDiv) assistantDiv.remove();
-                    addConfirm(record.data.__interrupt__[0].value.message);
-                } else if (record.eventType === "messages/partial" || record.eventType === "messages/complete") {
-                    const msg = record.data[0];
-                    if (msg?.type !== "ai") continue;
-                    if (msg.id !== assistantMsgId) {
-                        assistantMsgId = msg.id;
-                        if (!msg.content && msg.tool_calls?.length) continue;
-                    }
-                    if (msg.content) {
-                        if (!assistantDiv) {
-                            status.remove();
-                            assistantDiv = addMsg(msg.content, "assistant");
-                        } else {
-                            setContent(assistantDiv, msg.content, "assistant");
-                        }
-                        log.scrollTop = log.scrollHeight;
-                    } else if (msg.tool_calls?.length && !assistantDiv) {
-                        status.textContent = "Calling " + msg.tool_calls[0].name + "...";
-                    }
-                }
-            }
-        }
+        const { interrupted, assistantDiv } = await consumeStream(res, status);
 
         if (!interrupted) {
             pendingInterrupt = false;
@@ -297,22 +306,98 @@ async function sendMessage(text) {
     }
 }
 
+// Re-renders the whole log from the thread's server-side state. Human
+// messages and assistant replies with text are shown; tool-call-only
+// assistant messages and tool results are internal and skipped. A thread
+// paused on buy_stock's interrupt gets its Yes/No prompt back too.
+function renderThreadState(state) {
+    const messages = state.values?.messages || [];
+    if (!messages.length) {
+        showEmptyHero();
+        return;
+    }
+    logInner.innerHTML = "";
+    log.classList.remove("empty");
+    resetBtn.classList.remove("hidden");
+    for (const msg of messages) {
+        if (msg.type === "human") addMsg(msg.content, "user");
+        else if (msg.type === "ai" && msg.content) addMsg(msg.content, "assistant");
+    }
+    const interrupt = state.interrupts?.[0] || state.tasks?.flatMap((t) => t.interrupts || [])[0];
+    pendingInterrupt = Boolean(interrupt);
+    if (interrupt) addConfirm(interrupt.value.message);
+}
+
+// The log lives only in the DOM, so any reload (a manual refresh, Chrome
+// discarding a background tab while a slow research call runs, pull-to-
+// refresh on mobile) used to leave the page blank even though the thread
+// and its run were still alive on the server. Rebuild the log from the
+// thread's state, and if a run is still in flight, show "Thinking..." and
+// join its stream so the reply lands in this page when it finishes.
+async function restoreThread() {
+    const stored = sessionStorage.getItem("thread_id");
+    if (!stored) {
+        await ensureThread();
+        return;
+    }
+    threadId = stored;
+    busy = true;
+    sendBtn.disabled = true;
+    input.disabled = true;
+    try {
+        const stateRes = await fetch(`/threads/${threadId}/state`);
+        if (stateRes.status === 404) {
+            sessionStorage.removeItem("thread_id");
+            threadId = null;
+            await ensureThread();
+            return;
+        }
+        if (!stateRes.ok) return;
+        renderThreadState(await stateRes.json());
+
+        const runsRes = await fetch(`/threads/${threadId}/runs?limit=1`);
+        if (!runsRes.ok) return;
+        const latest = (await runsRes.json())[0];
+        if (!latest || !["pending", "running"].includes(latest.status)) return;
+
+        const status = addMsg("Thinking...", "system");
+        const modes = encodeURIComponent(JSON.stringify(STREAM_MODES));
+        const joinRes = await fetch(`/threads/${threadId}/runs/${latest.run_id}/stream?stream_mode=${modes}`);
+        if (joinRes.ok && joinRes.body) await consumeStream(joinRes, status);
+        // Joining only delivers events emitted after we connected; the state
+        // is authoritative for whatever streamed before the reload.
+        const finalRes = await fetch(`/threads/${threadId}/state`);
+        if (finalRes.ok) renderThreadState(await finalRes.json());
+        else status.remove();
+    } catch (err) {
+        // Leave whatever rendered; the next send will surface real errors.
+    } finally {
+        busy = false;
+        sendBtn.disabled = false;
+        input.disabled = false;
+    }
+}
+
 sendBtn.onclick = () => sendMessage(input.value.trim());
 input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMessage(input.value.trim());
 });
 
+// Reuse the server-rendered hero (it carries the inline logo SVG that
+// frontend.py splices in) rather than rebuilding it from a template here.
+const emptyHero = document.querySelector(".empty-hero");
+
+function showEmptyHero() {
+    resetBtn.classList.add("hidden");
+    log.classList.add("empty");
+    logInner.replaceChildren(emptyHero);
+}
+
 resetBtn.onclick = () => {
     sessionStorage.removeItem("thread_id");
     threadId = null;
     pendingInterrupt = false;
-    resetBtn.classList.add("hidden");
-    log.classList.add("empty");
-    logInner.innerHTML = `<div class="empty-hero">
-        <span class="logo"></span>
-        <h2>Broker Portfolio Agent</h2>
-        <p>Ask about your positions, research a ticker, or place a trade.</p>
-      </div>`;
+    showEmptyHero();
 };
 
-ensureThread();
+restoreThread();
