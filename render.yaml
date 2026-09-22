@@ -3,7 +3,7 @@
 # for them on first deploy instead of storing them in the repo.
 services:
   - type: web
-    name: broker-portfolio-agent
+    name: broker-agent-yung
     runtime: docker
     plan: free
     region: oregon
