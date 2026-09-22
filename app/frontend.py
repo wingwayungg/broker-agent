@@ -16,10 +16,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse, Response
-from starlette.routing import Route
+from starlette.responses import HTMLResponse
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
-STYLE_CSS = (Path(__file__).parent / "static" / "style.css").read_text()
+STATIC_DIR = Path(__file__).parent / "static"
 
 # 3-candlestick mark (irregular heights, mixed hollow/solid bodies). Inline
 # (stroke/fill="currentColor") for the in-page logo so it follows --accent;
@@ -66,7 +67,7 @@ PAGE = r"""<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header>
@@ -419,13 +420,12 @@ def index(_request):
     return HTMLResponse(PAGE)
 
 
-def style(_request):
-    return Response(STYLE_CSS, media_type="text/css")
-
-
+# Exact-match Route for "/" plus a *prefixed* static mount. langgraph_api
+# splices these routes ahead of its own, so a Mount("/") would prefix-match
+# /threads, /assistants, /docs etc. and swallow the whole API.
 app = Starlette(
     routes=[
         Route("/", index, methods=["GET"]),
-        Route("/style.css", style, methods=["GET"]),
+        Mount("/static", StaticFiles(directory=STATIC_DIR), name="static"),
     ]
 )
