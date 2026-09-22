@@ -202,10 +202,21 @@ function postRun(text, asResume) {
 // tool calls and replaced by the streaming assistant reply, or removed if a
 // confirmation interrupt arrives instead. Shared by a fresh POST run and by
 // re-joining an in-flight run after a page reload.
+//
+// "messages" stream mode carries *every* LLM call in the graph, including the
+// sub-agent and synthesis calls research_stock makes inside the tools node.
+// Those are working notes, not the reply -- rendering them put the synthesis's
+// three paragraphs in the bubble and then wiped them when the agent's own
+// reply started streaming into the same div. So only ids that a
+// messages/metadata event attributed to the agent node are rendered. Joining a
+// run mid-flight can miss the metadata event for a message already streaming;
+// that message then stays on "Thinking..." until the post-join re-render from
+// thread state, which is authoritative anyway.
 async function consumeStream(res, status) {
     let assistantDiv = null;
     let assistantMsgId = null;
     let interrupted = false;
+    const agentMsgIds = new Set();
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -221,7 +232,11 @@ async function consumeStream(res, status) {
             buf = buf.slice(idx + 2);
             if (!record) continue;
 
-            if (record.eventType === "updates" && record.data.__interrupt__) {
+            if (record.eventType === "messages/metadata") {
+                for (const [msgId, entry] of Object.entries(record.data)) {
+                    if (entry?.metadata?.langgraph_node === "agent") agentMsgIds.add(msgId);
+                }
+            } else if (record.eventType === "updates" && record.data.__interrupt__) {
                 interrupted = true;
                 pendingInterrupt = true;
                 status.remove();
@@ -229,7 +244,7 @@ async function consumeStream(res, status) {
                 addConfirm(record.data.__interrupt__[0].value.message);
             } else if (record.eventType === "messages/partial" || record.eventType === "messages/complete") {
                 const msg = record.data[0];
-                if (msg?.type !== "ai") continue;
+                if (msg?.type !== "ai" || !agentMsgIds.has(msg.id)) continue;
                 if (msg.id !== assistantMsgId) {
                     assistantMsgId = msg.id;
                     if (!msg.content && msg.tool_calls?.length) continue;
