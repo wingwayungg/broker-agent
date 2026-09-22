@@ -1,145 +1,84 @@
 # Broker Portfolio Agent
 
-A LangGraph agent that answers natural-language questions about live brokerage
-positions, account summary, and open orders — by orchestrating tool calls
-against your existing broker API client.
+[![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-1C3C3C?logo=langgraph&logoColor=white)](https://www.langchain.com/langgraph)
+[![LLM by Groq](https://img.shields.io/badge/LLM-Groq-F55036)](https://groq.com/)
+[![Deployed on Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7?logo=render&logoColor=white)](https://render.com/)
 
-**Mostly read-only, by design.** This agent can query your account and place
-buy orders — nothing else. There is no sell, modify, or cancel tool at all.
-Buy orders require two separate explicit human confirmations before
-anything is submitted, and that gate is enforced by the LangGraph engine
-itself (see `app/tools.py`'s `buy_stock`, which pauses on `interrupt()`),
-not just by prompt instructions — the model that decides to call the tool
-is never invoked again until a real human reply comes back through `ask()`.
+This is a simple chat website where you can ask questions about a stock portfolio in everyday English — for example "What am I holding right now?" or "Should I buy TSLA?" — and an AI assistant answers by looking up the account and today's market prices. The account behind it is a demo account holding three sample stocks (Apple, Nvidia and Microsoft), so no real money is involved, but the prices are live from [Yahoo Finance](https://finance.yahoo.com/) and the research is built from live web search via [Tavily](https://tavily.com/). This project has two main purposes. First, most AI chatbots can only *talk*; this one can *act* — it reads an account and can place an order — which raises the question of how to keep an AI that acts safely under human control, and that question shaped most of the design. Second, this project serves as an exercise to practice building AI agents with LangGraph and connecting them to live data. The features of this project include:
 
-## Why LangGraph instead of a plain LangChain chain
+- AI portfolio assistant (powered by [LangGraph](https://www.langchain.com/langgraph) and [Groq](https://groq.com/))
+- viewing holdings, cash and buying power, open orders and recent trades
+- researching any stock with three AI "analysts" (fundamentals, technicals, news) working in parallel on live data
+- placing a buy order — but only after a human says "yes" twice
+- follow-up questions ("which of those are in profit?") within the same conversation
+- a browser chat page with Yes/No buttons, proper tables, and a conversation that survives a page reload
 
-Portfolio questions are naturally multi-turn: "what's my tech exposure?"
-followed by "which of those are red today?" requires remembering the prior
-tool result. LangGraph models this as a stateful graph with memory, rather
-than a one-shot chain, which is what makes follow-up questions work.
+## Ask the assistant
 
-## Why `requests` instead of MCP for market data
+A chat box sits at the bottom of the page. It sends your question to the assistant, which decides which of its seven tools to use (positions, account summary, open orders, recent fills, bracket order status, research, buy), reads the result, and writes a short answer back. Below are real exchanges against the demo account. Answers are quoted as given, shortened where they ran long; where the answer was a table, it is described in *italics*:
 
-`app/market_data.py` calls Yahoo Finance and Tavily directly with `requests`
-rather than through MCP servers. Both calls are invoked deterministically
-from fixed positions in `app/research.py` — never chosen by the model at
-runtime — so MCP's core value (runtime tool discovery, a model picking
-among capabilities) doesn't apply. Every Yahoo Finance MCP server is also
-an unofficial wrapper around the same undocumented endpoint this code
-already hits, so going through one would add a dependency chain without
-reducing the "Yahoo may break this" risk. A plain sync `requests.get` is
-also cheaper than an async session lifecycle bridged into this otherwise
-sync codebase, on the 512MB Render free-tier instance this runs on.
+| Prompt | Answer |
+|--------|--------|
+| What am I holding right now? | *A table: AAPL 150 shares (+81.0%), NVDA 40 shares (+91.9%), MSFT 60 shares (+24.8%), with average cost, current price and market value* |
+| Which of those are in profit? | All three of your current holdings are showing a profit … Each position's unrealized P&L is positive, so every stock you own is currently in profit. |
+| How much cash do I have? | You have **$41,200.00** in cash available in your account. |
+| Do I have any open orders? | *A table with one order: BUY 20 TSLA, limit $245.00, Submitted* |
+| Sell all my NVDA | I'm not able to place sell orders or cancel existing positions. I can only help you research a stock, view your current holdings, or place a **buy** order. |
+| Should I buy TSLA? | *Three short sections — fundamentals, technicals, news — followed by:* I'm not able to give personal investment advice or tell you whether to buy or not. Use the information above to make your own decision … |
+| Buy some Apple | Sure! How many shares of **AAPL** would you like to purchase? |
+| Buy 100000 shares of NVDA | I'm unable to place that order — the estimated cost of ≈ $22.7 million for 100 000 NVDA shares exceeds the buying power available in the account. |
+| Buy 10 shares of AAPL | Confirm order: BUY 10.0 AAPL @ ~$338.98 (estimated cost $3,389.80). Reply 'yes' to continue or 'no' to cancel. |
+| yes | Final confirmation — this will submit a real order: BUY 10.0 AAPL @ ~$338.98 (estimated cost $3,389.80). This cannot be undone once submitted. Reply 'yes' to submit or 'no' to cancel. |
+| no | The order wasn't placed because the required confirmations weren't given, so no shares were bought. |
 
-The same logic rules out Tavily's own SDKs: `langchain-tavily` wraps the
-call as a model-selectable LangChain tool, which buys nothing for a query
-that's always invoked the same way with a fixed argument, and
-`tavily-python` is just a thin wrapper around the one `/search` POST this
-code already makes directly.
+The last seven rows show the guardrails. The assistant has no way to sell, cancel or modify anything — those tools simply don't exist, so it cannot do them however it is asked. It will not tell you whether to buy or sell; a question like "should I buy TSLA?" is answered with research and a reminder that the decision is yours. A vague instruction ("buy some Apple") gets a question back rather than a guessed quantity, and an order the account can't afford is refused on the spot. Even a valid buy order never goes through on the assistant's say-so: it asks a real person to confirm twice, and anything other than a clear "yes" cancels it.
 
-## Architecture
+> **Note:** the live demo runs on Render's free tier, which puts the server to sleep after 15 minutes without visitors. The first page load after a quiet spell can take up to a minute while it wakes up; after that, most answers arrive in a second or two. Research questions take around 20 seconds because they run four AI calls and several web searches.
 
-```
-User question (CLI or POST /ask)
-        |
-        v
-LangGraph agent (app/agent.py)
-   - router node: decides which tool(s) to call
-   - tool node: executes broker tool calls
-   - synthesis node: LLM turns tool output into a natural-language answer
-   - loops back on follow-up questions within the same session
-   - buy_stock pauses the graph twice (interrupt()) for human confirmation
-     before it ever reaches the point of placing an order
-        |
-        v
-Tools (app/tools.py) -> broker client (app/broker_client.py)
-        |
-        v
-Your existing broker API client (plug in here)
-```
+## Technical Features
 
-## Project layout
+- **An agent, not a script.** There is no fixed menu of commands. Each question goes to the language model together with descriptions of the seven tools; the model picks one, LangGraph runs it, the result goes back to the model, and it either picks another tool or writes the answer. The conversation is kept per browser tab as a LangGraph *thread*, which is what lets "which of those are in profit?" resolve against the previous answer. A question phrased as a trading decision ("should I buy TSLA?") is routed to the research tool by rule, and the model is instructed never to frame research or an order confirmation as a recommendation.
+
+- **Human-in-the-loop buying, enforced by the engine rather than the prompt.** `buy_stock` is the only tool that changes anything; there is deliberately no sell, cancel or modify tool, so those actions are impossible rather than merely discouraged. Inside `buy_stock`, LangGraph's `interrupt()` is called twice. Each call freezes the whole graph mid-tool and hands the confirmation text to whoever is driving it — the browser page or the terminal — and nothing after that line runs until a reply arrives from *outside* the model. The model that decided to buy is never asked to confirm its own order, and only a plain `y` / `yes` / `confirm` continues; any other reply cancels. Quantity and buying power are checked *before* the first pause, so an unaffordable order is refused without a confirmation round-trip.
+
+- **Three research analysts in parallel.** "Research TSLA" is a fixed pipeline rather than more agent improvisation: a fundamentals analyst, a technicals analyst and a news/sentiment analyst — each a single narrow language-model call fed its own live data — run concurrently in a thread pool, and a fourth call condenses their notes into exactly three paragraphs. Fundamentals and news come from Tavily web search, anchored on the company name because a bare ticker like `F` returns unrelated results; technicals come from Yahoo Finance's chart endpoint (price, day and 52-week range, volume, one-month trend).
+
+- **Live data instead of the model's memory.** A language model's knowledge of prices, earnings and news is months out of date, so nothing numerical is left to it: prices are fetched at the moment of the question, and each analyst is told to say data is unavailable rather than fill the gap from memory. Even the demo account works this way — its holdings are fixed but priced live, which is why the profit figures in the examples above change from day to day. When a source is down, the fetchers return a bracketed `[... unavailable]` note instead of raising, so the assistant says so plainly rather than guessing.
+
+- **Mock-first broker.** Everything runs against a built-in demo account, so it can be tried without a brokerage login. `app/broker_client.py` is the one file to change to connect a real broker; as long as its methods keep returning the Pydantic models in `app/models.py`, the tools, the agent and the UI do not change at all.
+
+- **Deliberately light.** The whole app is one Docker image running LangGraph's own API server on a 512 MB free instance, with a small Starlette page mounted on top for the chat UI. Market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: those calls are made deterministically from fixed points in the research pipeline, never chosen by the model at runtime, so the extra layers would add dependencies without adding capability (the full reasoning is in the `app/market_data.py` docstring).
+
+- **A small, hand-written browser page.** The page streams replies straight from the LangGraph API, turns the confirmation prompt into Yes/No buttons, renders the model's markdown tables as real tables, and rebuilds the chat log from the server's thread state on reload — so refreshing mid-answer doesn't lose anything. Conversations live in the server's memory, not a database; after a redeploy the page notices its old thread is gone and quietly starts a new one.
+
+## Quality Control
+
+The project has 29 automated tests that run offline (network calls are stubbed) in under a second, so they run before every change:
 
 ```
-broker-portfolio-agent/
-├── app/
-│   ├── config.py          # env vars, LLM provider config
-│   ├── models.py          # Pydantic models for all broker data
-│   ├── broker_client.py   # TODO: wire up to your existing broker API client
-│   ├── tools.py           # LangGraph-callable tools (buy_stock is the only mutating one)
-│   ├── agent.py           # the LangGraph graph definition
-│   └── main.py            # FastAPI app exposing POST /ask
-├── tests/
-│   └── test_tools.py      # tests against the mock broker client
-├── cli.py                 # quick terminal chat loop for demos
-├── requirements.txt
-└── .env
+$ python -m pytest -q
+.............................                                            [100%]
+29 passed in 0.91s
 ```
 
-## Setup
+The buy-order tests are the important ones. Instead of faking the confirmation step, they build a tiny real LangGraph graph around the tool and drive it with a hand-made "buy" instruction, checking that the order is only submitted after two explicit "yes" replies, that a "no" at either step submits nothing, and that an unaffordable order is refused before any confirmation. One test also asserts that `buy_stock` is the only tool capable of placing an order, so quietly adding a sell tool later would fail the suite.
+
+## Programming Languages
+
+The language I used is Python, with LangGraph and LangChain for the agent, Pydantic for the data models, FastAPI/Starlette for the web layer and plain `requests` for market data. The browser page is hand-written HTML, CSS and JavaScript with no framework. The language model is `openai/gpt-oss-120b` served by Groq (the provider is a single setting in `app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
+
+## Deployment
+
+Please visit [https://broker-portfolio-agent.onrender.com/](https://broker-portfolio-agent.onrender.com/)
+
+## Running it locally
 
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-# copy .env and fill in your own API keys (GROQ_API_KEY, TAVILY_API_KEY, ...)
+python -m venv venv && source venv/bin/activate
+pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests
+# create a .env with GROQ_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true)
+
+langgraph dev            # browser chat at http://localhost:2024/
+python cli.py            # or chat in the terminal
+python -m pytest         # run the tests
 ```
-
-## Plugging in a real broker connection
-
-Everything in `app/broker_client.py` currently returns mock data so the
-agent is runnable and demoable without any live brokerage account. Replace
-the method bodies with calls into whichever broker API/SDK you use — the
-function signatures and return types (Pydantic models in `app/models.py`)
-are the contract the rest of the app depends on, so as long as you match
-those, nothing else needs to change.
-
-## Running it
-
-CLI demo (no server needed):
-```bash
-python cli.py
-```
-
-FastAPI server:
-```bash
-uvicorn app.main:app --reload
-# POST http://localhost:8000/ask  {"question": "what are my current positions?"}
-```
-
-## Example session
-
-```
-> what are my current positions?
-You're holding 150 shares of AAPL (avg cost $187.32, currently $194.10,
-+3.6%) and 40 shares of NVDA (avg cost $118.50, currently $131.20, +10.7%).
-
-> which of those are up more than 5% today?
-Of your two positions, NVDA is up 10.7% and would qualify. AAPL is up 3.6%
-and does not.
-
-> place a sell order for the NVDA position
-I can't sell, modify, or cancel orders — the only order-placing tool I have
-is buy_stock. You'd need to sell directly through your broker.
-
-> buy 10 shares of AAPL
-Confirm order: BUY 10 AAPL @ ~$194.10 (estimated cost $1,941.00). Reply
-'yes' to continue or 'no' to cancel.
-
-> yes
-Final confirmation — this will submit a real order: BUY 10 AAPL @ ~$194.10
-(estimated cost $1,941.00). This cannot be undone once submitted. Reply
-'yes' to submit or 'no' to cancel.
-
-> yes
-Order submitted: BUY 10 AAPL @ ~$194.10 (order id 2001, status Submitted).
-```
-
-## Extending
-
-- Add a `get_market_data(symbol)` tool for live quotes beyond cost basis
-- Add per-tool-call logging in `app/agent.py` for an observability talking
-  point in interviews
-- Swap `GROQ` for `GEMINI` in `app/config.py` — the LLM client is abstracted
-  behind one function so switching providers is a one-line change
