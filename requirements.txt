@@ -1,3 +1,6 @@
+# Runtime deps only -- this is what the Render Docker image installs, so
+# keep it lean (512MB free-tier instance). Dev/local extras live in
+# requirements-dev.txt.
 langgraph>=0.2.0
 langgraph-cli[inmem]>=0.1.55
 langchain-core>=0.3.0
@@ -7,6 +10,3 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-dotenv>=1.0.0
 requests>=2.31.0
-pytest>=8.0.0
-jupyterlab>=4.2.0
-ipykernel>=6.29.0
