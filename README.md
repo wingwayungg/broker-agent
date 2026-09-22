@@ -71,6 +71,8 @@ The language I used is Python, with LangGraph and LangChain for the agent, Pydan
 
 Please visit [https://broker-portfolio-agent.onrender.com/](https://broker-portfolio-agent.onrender.com/)
 
+The image runs `langgraph dev`, which serves the LangGraph API and the browser UI together, so the deployed app and the local one are the same server. That is a development server, and I chose it knowingly: its API is unauthenticated, so anyone with the URL can run the graph on my API keys. With the broker mocked there is nothing to lose, but it is the first thing I would change before connecting a real account — either an `auth` block in `langgraph.json`, or serving the graph from a small uvicorn app of my own.
+
 ## Running it locally
 
 ```bash
