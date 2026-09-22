@@ -12,7 +12,7 @@ __pycache__/
 *.ipynb
 notebooks/
 tests/
-local/
+local_api_cli/
 README.md
 .claude
 .vscode/

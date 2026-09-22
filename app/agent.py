@@ -96,7 +96,7 @@ def build_agent():
     # follow-up questions in the same session have context. Swap for a
     # persistent checkpointer (e.g. SqliteSaver) if you want sessions to
     # survive a restart. This checkpointer only serves the in-process path
-    # (`ask()` below, which is what everything in local/ calls); the
+    # (`ask()` below, which is what everything in local_api_cli/ calls); the
     # LangGraph API path uses `platform_graph` and its own store instead.
     # That store has the same caveat in prod: `langgraph dev` pickles it to
     # .langgraph_api/, which survives a local restart but not a Render

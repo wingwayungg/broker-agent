@@ -78,7 +78,7 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests or cli script
 # create a .env with GROQ_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true)
 
-langgraph dev            # browser chat at http://localhost:2024/
-python -m local.cli      # or chat in the terminal
-python -m pytest         # run the tests
+langgraph dev                 # browser chat at http://localhost:2024/
+python -m local_api_cli.cli   # or chat in the terminal
+python -m pytest              # run the tests
 ```

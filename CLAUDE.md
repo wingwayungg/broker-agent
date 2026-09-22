@@ -5,15 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-source venv/bin/activate            # project venv (see .vscode/settings.json)
+source venv/bin/activate               # project venv (see .vscode/settings.json)
 pip install -r requirements.txt
 
-python -m pytest                    # full suite, offline (~1s)
+python -m pytest                       # full suite, offline (~1s)
 python -m pytest tests/test_tools.py::test_buy_stock_requires_two_affirmative_confirmations_before_submitting
 
-python -m local.cli                 # terminal chat loop (in-process, MemorySaver)
-uvicorn local.api:app --reload      # FastAPI: POST /ask {"question": ..., "thread_id": ...}
-langgraph dev                       # LangGraph API on :2024 + browser chat UI at / (what Render runs)
+python -m local_api_cli.cli            # terminal chat loop (in-process, MemorySaver)
+uvicorn local_api_cli.api:app --reload # FastAPI: POST /ask {"question": ..., "thread_id": ...}
+langgraph dev                          # LangGraph API on :2024 + browser chat UI at / (what Render runs)
 ```
 
 Render deploys are triggered by pushing to the connected branch (`render.yaml` blueprint; service name in there).
@@ -27,10 +27,10 @@ Read the module docstrings first — each file explains *why* it is shaped the w
 ### Layers and dependency direction
 
 ```
-entry points   local/cli.py   local/api.py (FastAPI /ask)   app/frontend.py (browser UI, via LangGraph API)
-                     \             |                               |
-                      ask() in app/agent.py              langgraph.json -> platform_graph
-                                 \                        /
+entry points   local_api_cli/cli.py   local_api_cli/api.py (FastAPI /ask)   app/frontend.py (browser UI, via LangGraph API)
+                         \                     |                                   |
+                             ask() in app/agent.py                   langgraph.json -> platform_graph
+                                        \                             /
 graph            app/agent.py   (agent node <-> ToolNode loop over MessagesState)
                               |
 tools            app/tools.py   (7 @tool functions; ALL_TOOLS)
@@ -42,7 +42,7 @@ data           app/market_data.py  (Yahoo chart endpoint, Tavily /search)
 config           app/config.py  (settings, get_llm())      app/models.py (Pydantic contract)
 ```
 
-Imports only go downward. `local/` holds the in-process runners (terminal chat and FastAPI `/ask`); they don't import each other, both just call `ask()`. Nothing in `local/` ships to Render — it's in `.dockerignore` and its deps (`fastapi`, `uvicorn`) are dev-only. Run them as `python -m local.cli` / `uvicorn local.api:app`, not `python local/cli.py`, so the repo root stays on `sys.path`. `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
+Imports only go downward. `local_api_cli/` holds the in-process runners (terminal chat and FastAPI `/ask`); they don't import each other, both just call `ask()`. It's named for its two contents rather than "local" because `tests/` and `notebooks/` are local too. Nothing in `local_api_cli/` ships to Render — it's in `.dockerignore` and its deps (`fastapi`, `uvicorn`) are dev-only. Run them as `python -m local_api_cli.cli` / `uvicorn local_api_cli.api:app`, not `python local_api_cli/cli.py`, so the repo root stays on `sys.path`. `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
 
 ### One turn, end to end
 
@@ -55,10 +55,10 @@ Memory is per `thread_id` and never in a real database (`MemorySaver` in-process
 
 ### Two compiled graphs, two entry paths
 
-`app/agent.py` exports both `agent` (compiled with `MemorySaver`, used by `local/cli.py` and `local/api.py` via `ask()`) and `platform_graph` (compiled with **no** checkpointer, referenced by `langgraph.json`). LangGraph Platform/`langgraph dev` supplies its own checkpointer and errors if the graph already has one, so don't collapse these into one.
+`app/agent.py` exports both `agent` (compiled with `MemorySaver`, used by `local_api_cli/cli.py` and `local_api_cli/api.py` via `ask()`) and `platform_graph` (compiled with **no** checkpointer, referenced by `langgraph.json`). LangGraph Platform/`langgraph dev` supplies its own checkpointer and errors if the graph already has one, so don't collapse these into one.
 
 - **In-process path** (`ask()`): infers whether the thread is paused via `agent.get_state(config).interrupts` and sends `Command(resume=text)` vs a new user message accordingly. Callers just keep passing whatever the user typed — including "yes"/"no".
-- **LangGraph API path** (`app/frontend.py`): the browser page posts straight to `/threads/{id}/runs/stream` with `stream_mode: ["messages", "updates"]`, tracks `pendingInterrupt` from the previous response's `__interrupt__` update, and chooses `input` vs `command.resume` explicitly. It never touches `ask()` or `local/api.py`. `frontend.py` is mounted via `langgraph.json`'s `http.app` hook and is a Starlette app on purpose (FastAPI would shadow LangGraph's `/docs`). Under `langgraph dev`, `local/api.py` is not served at all.
+- **LangGraph API path** (`app/frontend.py`): the browser page posts straight to `/threads/{id}/runs/stream` with `stream_mode: ["messages", "updates"]`, tracks `pendingInterrupt` from the previous response's `__interrupt__` update, and chooses `input` vs `command.resume` explicitly. It never touches `ask()` or `local_api_cli/api.py`. `frontend.py` is mounted via `langgraph.json`'s `http.app` hook and is a Starlette app on purpose (FastAPI would shadow LangGraph's `/docs`). Under `langgraph dev`, `local_api_cli/api.py` is not served at all.
 
 ### `buy_stock` is the only mutating tool, gated by `interrupt()`
 

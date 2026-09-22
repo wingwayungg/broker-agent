@@ -6,7 +6,8 @@ shadow LangGraph's own API explorer at those paths.
 
 The page talks directly to the LangGraph API's own /threads,
 /threads/{id}/runs/stream and /threads/{id}/state endpoints (same origin,
-so no CORS needed) rather than going through the ask() helper local/api.py uses.
+so no CORS needed) rather than going through the ask() helper that
+local_api_cli/api.py uses.
 That matters for buy_stock's two-step confirmation: the API distinguishes a
 fresh message (input) from a resume (command.resume) as separate request
 fields, so the page can know from the previous response's __interrupt__

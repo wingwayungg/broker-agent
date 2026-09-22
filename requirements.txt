@@ -2,8 +2,9 @@
 # keep it lean (512MB free-tier instance). Dev/local extras live in
 # requirements-dev.txt.
 #
-# Production runs `langgraph dev`; the FastAPI /ask wrapper (local/api.py)
-# is a local alternative, so fastapi + uvicorn are in requirements-dev.txt.
+# Production runs `langgraph dev`; the FastAPI /ask wrapper
+# (local_api_cli/api.py) is a local alternative, so fastapi + uvicorn are in
+# requirements-dev.txt.
 langgraph>=0.2.0
 langgraph-cli[inmem]>=0.1.55
 langchain-core>=0.3.0
