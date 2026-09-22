@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config import get_llm
-from app.market_data import fetch_price_snapshot, fetch_web_context
+from app.market_data import fetch_company_name, fetch_price_snapshot, fetch_web_context
 
 _RESEARCHERS = {
     "fundamentals": (
@@ -44,12 +44,22 @@ _RESEARCHERS = {
     ),
 }
 
+# Each fetcher takes (symbol, company_name). The name is resolved once per
+# research_stock call and threaded through so web searches anchor on
+# "Everpure, Inc. (P)" rather than the bare ticker "P". Fundamentals search
+# the general index with no date window (earnings pages, not headlines);
+# news searches the news index over the last two weeks.
 _CONTEXT_FETCHERS = {
-    "fundamentals": lambda symbol: fetch_web_context(
-        symbol, "latest quarterly earnings, revenue, and profit margins"
+    "fundamentals": lambda symbol, name: fetch_web_context(
+        symbol,
+        "latest quarterly earnings, revenue, and profit margins",
+        company_name=name,
+        recent_days=None,
     ),
-    "technicals": lambda symbol: fetch_price_snapshot(symbol),
-    "news_sentiment": lambda symbol: fetch_web_context(symbol, "recent news and catalysts"),
+    "technicals": lambda symbol, name: fetch_price_snapshot(symbol),
+    "news_sentiment": lambda symbol, name: fetch_web_context(
+        symbol, "recent news and catalysts", company_name=name
+    ),
 }
 
 _SYNTHESIS_PROMPT = (
@@ -63,9 +73,10 @@ _SYNTHESIS_PROMPT = (
 )
 
 
-def _run_researcher(role: str, system_prompt: str, symbol: str) -> str:
-    live_data = _CONTEXT_FETCHERS[role](symbol)
-    human_content = f"Ticker: {symbol}\n\nLive data pulled just now:\n{live_data}"
+def _run_researcher(role: str, system_prompt: str, symbol: str, company_name: str | None) -> str:
+    live_data = _CONTEXT_FETCHERS[role](symbol, company_name)
+    header = f"Ticker: {symbol}" + (f" ({company_name})" if company_name else "")
+    human_content = f"{header}\n\nLive data pulled just now:\n{live_data}"
     response = get_llm().invoke(
         [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     )
@@ -76,10 +87,11 @@ def research_stock(symbol: str) -> str:
     """Run up to three researcher sub-agents in parallel, then synthesize
     their notes into a three-paragraph summary."""
     symbol = symbol.strip().upper()
+    company_name = fetch_company_name(symbol)
 
     with ThreadPoolExecutor(max_workers=len(_RESEARCHERS)) as pool:
         futures = [
-            pool.submit(_run_researcher, role, prompt, symbol)
+            pool.submit(_run_researcher, role, prompt, symbol, company_name)
             for role, prompt in _RESEARCHERS.items()
         ]
         notes = [f.result() for f in futures]

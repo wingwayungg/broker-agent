@@ -5,7 +5,7 @@ these run offline and don't depend on Yahoo/Tavily being reachable.
 """
 from unittest.mock import MagicMock, patch
 
-from app.market_data import fetch_price_snapshot, fetch_web_context
+from app.market_data import fetch_company_name, fetch_price_snapshot, fetch_web_context
 
 
 def _yahoo_response(meta: dict, closes: list) -> MagicMock:
@@ -77,6 +77,24 @@ def test_fetch_price_snapshot_handles_missing_price():
     assert result == "Current price: unavailable"
 
 
+def test_fetch_company_name_prefers_long_name():
+    meta = {"shortName": "Everpure", "longName": "Everpure, Inc."}
+    with patch("app.market_data.requests.get", return_value=_yahoo_response(meta, [])):
+        assert fetch_company_name("P") == "Everpure, Inc."
+
+
+def test_fetch_company_name_falls_back_to_short_name():
+    with patch("app.market_data.requests.get", return_value=_yahoo_response({"shortName": "Everpure"}, [])):
+        assert fetch_company_name("P") == "Everpure"
+
+
+def test_fetch_company_name_returns_none_when_unavailable():
+    with patch("app.market_data.requests.get", side_effect=ConnectionError("boom")):
+        assert fetch_company_name("P") is None
+    with patch("app.market_data.requests.get", return_value=_yahoo_response({}, [])):
+        assert fetch_company_name("P") is None
+
+
 def _tavily_response(results: list) -> MagicMock:
     resp = MagicMock()
     resp.json.return_value = {"results": results}
@@ -113,6 +131,32 @@ def test_fetch_web_context_happy_path_formats_and_truncates_results():
     call_kwargs = mock_post.call_args.kwargs
     assert call_kwargs["json"]["query"] == "AAPL stock latest quarterly earnings"
     assert call_kwargs["json"]["api_key"] == "fake-key"
+    # Default is the news index over the last two weeks.
+    assert call_kwargs["json"]["topic"] == "news"
+    assert call_kwargs["json"]["days"] == 14
+
+
+def test_fetch_web_context_anchors_query_on_company_name():
+    # A bare one-letter ticker like "P" is useless as a search term; the
+    # company name must be in the query so results are about the right stock.
+    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
+        "app.market_data.requests.post", return_value=_tavily_response([])
+    ) as mock_post:
+        fetch_web_context("P", "recent news and catalysts", company_name="Everpure, Inc.")
+
+    query = mock_post.call_args.kwargs["json"]["query"]
+    assert query == "Everpure, Inc. (P) stock recent news and catalysts"
+
+
+def test_fetch_web_context_without_window_searches_general_index():
+    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
+        "app.market_data.requests.post", return_value=_tavily_response([])
+    ) as mock_post:
+        fetch_web_context("AAPL", "latest quarterly earnings", recent_days=None)
+
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["topic"] == "general"
+    assert "days" not in payload
 
 
 def test_fetch_web_context_returns_message_when_no_results():

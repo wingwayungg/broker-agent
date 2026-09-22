@@ -80,11 +80,22 @@ class _FakeLLM:
 
 def test_research_stock_returns_three_paragraph_summary():
     with patch("app.research.get_llm", return_value=_FakeLLM()), patch(
+        "app.research.fetch_company_name", return_value="Apple Inc."
+    ), patch(
         "app.research.fetch_price_snapshot", return_value="mock price snapshot"
-    ), patch("app.research.fetch_web_context", return_value="mock web context"):
+    ), patch(
+        "app.research.fetch_web_context", return_value="mock web context"
+    ) as mock_web:
         result = research_stock.invoke({"symbol": "aapl"})
     paragraphs = [p for p in result.split("\n\n") if p.strip()]
     assert len(paragraphs) == 3
+
+    # Both web-backed researchers must search by company name, not just the
+    # ticker, and fundamentals must not be restricted to a recent-news window.
+    calls = {c.args[1]: c.kwargs for c in mock_web.call_args_list}
+    assert all(kw["company_name"] == "Apple Inc." for kw in calls.values())
+    assert calls["latest quarterly earnings, revenue, and profit margins"]["recent_days"] is None
+    assert "recent_days" not in calls["recent news and catalysts"]
 
 
 def test_buy_stock_is_the_only_order_placing_tool():

@@ -70,6 +70,18 @@ def fetch_current_price(symbol: str) -> float | None:
     return meta.get("regularMarketPrice")
 
 
+def fetch_company_name(symbol: str) -> str | None:
+    """Company name for a symbol from Yahoo's chart meta, or None if it
+    couldn't be fetched. Web searches need this: a bare ticker like "P"
+    (Everpure) or "F" (Ford) is too short a token to anchor a search on, so
+    querying by ticker alone returns unrelated results."""
+    try:
+        meta, _ = _fetch_chart_data(symbol)
+    except Exception:
+        return None
+    return meta.get("longName") or meta.get("shortName") or None
+
+
 def fetch_price_snapshot(symbol: str) -> str:
     """Current price, day range, 52-week range, volume, and ~1-month trend
     for a symbol, from Yahoo Finance's chart endpoint. Returns a plain-text
@@ -107,26 +119,40 @@ def fetch_price_snapshot(symbol: str) -> str:
     return "\n".join(lines)
 
 
-def fetch_web_context(symbol: str, topic: str) -> str:
-    """Recent web search results for a symbol via Tavily, scoped by topic
-    (e.g. "recent news and catalysts" or "latest quarterly earnings, revenue,
-    and margins"). Returns concatenated result snippets, or a bracketed
-    explanation if search failed or no key is configured."""
+def fetch_web_context(
+    symbol: str,
+    topic: str,
+    *,
+    company_name: str | None = None,
+    recent_days: int | None = 14,
+) -> str:
+    """Web search results for a symbol via Tavily, scoped by topic (e.g.
+    "recent news and catalysts" or "latest quarterly earnings, revenue, and
+    margins"). Returns concatenated result snippets, or a bracketed
+    explanation if search failed or no key is configured.
+
+    `company_name` (from fetch_company_name) is put in the query alongside
+    the ticker so short tickers resolve to the right company. `recent_days`
+    picks the index: an int searches Tavily's news index restricted to that
+    many days back (right for news/sentiment); None searches the general web
+    index with no date filter, which is where earnings/financials summary
+    pages live — a quarterly report is usually older than any sensible news
+    window, so searching news for fundamentals finds nothing most of the
+    quarter."""
     if not settings.tavily_api_key:
         return "[web search unavailable: no TAVILY_API_KEY configured]"
+    subject = f"{company_name} ({symbol})" if company_name else symbol
+    payload = {
+        "api_key": settings.tavily_api_key,
+        "query": f"{subject} stock {topic}",
+        "search_depth": "basic",
+        "topic": "news" if recent_days else "general",
+        "max_results": 5,
+    }
+    if recent_days:
+        payload["days"] = recent_days
     try:
-        resp = requests.post(
-            _TAVILY_SEARCH_URL,
-            json={
-                "api_key": settings.tavily_api_key,
-                "query": f"{symbol} stock {topic}",
-                "search_depth": "basic",
-                "topic": "news",
-                "max_results": 5,
-                "days": 14,
-            },
-            timeout=15,
-        )
+        resp = requests.post(_TAVILY_SEARCH_URL, json=payload, timeout=15)
         resp.raise_for_status()
         results = resp.json().get("results", [])
     except Exception as exc:
