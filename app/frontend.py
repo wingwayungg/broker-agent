@@ -415,11 +415,11 @@ PAGE = PAGE.replace("__FAVICON_HREF__", FAVICON_HREF).replace(
 )
 
 
-async def index(request):
+def index():
     return HTMLResponse(PAGE)
 
 
-async def style(request):
+def style():
     return Response(STYLE_CSS, media_type="text/css")
 
 

@@ -21,7 +21,7 @@ class Answer(BaseModel):
     answer: str
 
 
-@app.post("/ask", response_model=Answer)
+@app.post("/ask")
 def ask_endpoint(payload: Question) -> Answer:
     answer = ask(payload.question, thread_id=payload.thread_id)
     return Answer(answer=answer)
