@@ -65,7 +65,7 @@ The buy-order tests are the important ones. Instead of faking the confirmation s
 
 ## Programming Languages
 
-The language I used is Python, with LangGraph and LangChain for the agent, Pydantic for the data models, FastAPI/Starlette for the web layer and plain `requests` for market data. The browser page is hand-written HTML, CSS and JavaScript with no framework. The language model is `openai/gpt-oss-120b` served by Groq (the provider is a single setting in `app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
+The language I used is Python, with LangGraph and LangChain for the agent, Pydantic for the data models, Starlette for the web layer and plain `requests` for market data. The browser page is hand-written HTML, CSS and JavaScript with no framework. The language model is `openai/gpt-oss-120b` served by Groq (the provider is a single setting in `app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
 
 ## Deployment
 
@@ -75,10 +75,10 @@ Please visit [https://broker-portfolio-agent.onrender.com/](https://broker-portf
 
 ```bash
 python -m venv venv && source venv/bin/activate
-pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests
+pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests or cli script
 # create a .env with GROQ_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true)
 
 langgraph dev            # browser chat at http://localhost:2024/
-python cli.py            # or chat in the terminal
+python -m local.cli      # or chat in the terminal
 python -m pytest         # run the tests
 ```

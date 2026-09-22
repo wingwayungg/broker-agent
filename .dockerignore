@@ -7,10 +7,12 @@ env/
 __pycache__/
 *.pyc
 .pytest_cache/
+.langgraph_api/
 .ipynb_checkpoints/
 *.ipynb
 notebooks/
 tests/
+local/
 README.md
 .claude
 .vscode/

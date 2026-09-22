@@ -95,9 +95,12 @@ def build_agent():
     # MemorySaver keeps per-thread conversation state in memory so
     # follow-up questions in the same session have context. Swap for a
     # persistent checkpointer (e.g. SqliteSaver) if you want sessions to
-    # survive a restart. Only used for direct in-process invocation
-    # (cli.py, app/main.py) — see `platform_graph` below for the
-    # LangGraph API/Platform deployment path.
+    # survive a restart. This checkpointer only serves the in-process path
+    # (`ask()` below, which is what everything in local/ calls); the
+    # LangGraph API path uses `platform_graph` and its own store instead.
+    # That store has the same caveat in prod: `langgraph dev` pickles it to
+    # .langgraph_api/, which survives a local restart but not a Render
+    # restart or free-tier spin-down (ephemeral filesystem).
     checkpointer = MemorySaver()
     return _build_graph().compile(checkpointer=checkpointer)
 

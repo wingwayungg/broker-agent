@@ -1,6 +1,9 @@
 """
 Quick terminal chat loop — the fastest way to demo this live in an
 interview without standing up the FastAPI server first.
+
+Run with `python -m local.cli` from the repo root (not `python local/cli.py`,
+which would put local/ on sys.path instead of the root and break `import app`).
 """
 from app.agent import ask
 
