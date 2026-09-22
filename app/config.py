@@ -3,6 +3,8 @@ Central config. Keeping provider selection here means swapping Groq for
 Gemini (or anything else) later is a one-line change, not a refactor.
 """
 import os
+from functools import cache
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,11 +26,15 @@ class Settings:
 settings = Settings()
 
 
+@cache
 def get_llm():
     """
     Returns a LangChain-compatible chat model based on configured provider.
     Swap providers by changing LLM_PROVIDER in .env — nothing else in the
     app needs to know which one is active.
+
+    Cached: the client is stateless and constructing one per call (four
+    times per research_stock) only burns time and connection setup.
     """
     if settings.llm_provider == "groq":
         from langchain_groq import ChatGroq
