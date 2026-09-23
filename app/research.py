@@ -52,13 +52,13 @@ _RESEARCHERS = {
 _CONTEXT_FETCHERS = {
     "fundamentals": lambda symbol, name: fetch_web_context(
         symbol,
-        "latest quarterly earnings, revenue, and profit margins",
+        "latest quarterly earnings, revenue, and profit margins in recent 1 year",
         company_name=name,
         recent_days=None,
     ),
     "technicals": lambda symbol, name: fetch_price_snapshot(symbol),
     "news_sentiment": lambda symbol, name: fetch_web_context(
-        symbol, "recent news and catalysts", company_name=name
+        symbol, "news and catalysts in recent 3 months", company_name=name
     ),
 }
 
