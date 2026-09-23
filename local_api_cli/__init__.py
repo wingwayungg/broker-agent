@@ -2,7 +2,7 @@
 The local API and the local CLI -- the two in-process ways a human drives
 the agent. Named after what's in it rather than "local", because tests/ and
 notebooks/ run locally too; what's specific here is the pair of entry
-points. Nothing in here is served on Render -- production is `langgraph dev`
+points. Nothing in here is served on Fly -- production is `langgraph dev`
 (see langgraph.json), which uses `platform_graph` and mounts app/frontend.py.
 
 Both modules go through `ask()` in app/agent.py, i.e. the MemorySaver-backed

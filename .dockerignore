@@ -18,4 +18,4 @@ README.md
 .vscode/
 .idea/
 .DS_Store
-render.yaml
+fly.toml

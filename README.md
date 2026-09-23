@@ -2,7 +2,7 @@
 
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-1C3C3C?logo=langgraph&logoColor=white)](https://www.langchain.com/langgraph)
 [![LLM by Groq](https://img.shields.io/badge/LLM-Groq-F55036)](https://groq.com/)
-[![Deployed on Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7?logo=render&logoColor=white)](https://render.com/)
+[![Deployed on Fly](https://img.shields.io/badge/Deployed%20on-Fly-8B5CF6?logo=flydotio&logoColor=white)](https://fly.io/)
 
 This is a simple chat website where you can ask questions about a stock portfolio in everyday English — for example "What am I holding right now?" or "Should I buy TSLA?" — and an AI assistant answers by looking up the account and today's market prices. The account behind it is a demo account holding three sample stocks (Apple, Nvidia and Microsoft), so no real money is involved, but the prices are live from [Yahoo Finance](https://finance.yahoo.com/) and the research is built from live web search via [Tavily](https://tavily.com/). This project serves as an exercise to practice building AI agents (powered by [LangGraph](https://www.langchain.com/langgraph) and [Groq](https://groq.com/)) and connecting them to live data. The features of this project include:
 
@@ -106,7 +106,7 @@ The language I used is Python, with LangGraph and LangChain for the agent, Pydan
 
 ## Deployment
 
-Please visit [https://broker-portfolio-agent.onrender.com/](https://broker-portfolio-agent.onrender.com/)
+Please visit [https://broker-ai-agent-yung.fly.dev/](https://broker-ai-agent-yung.fly.dev/)
 
 The image runs `langgraph dev`, which serves the LangGraph API and the browser UI together, so the deployed app and the local one are the same server. That is a development server, and I chose it knowingly: its API is unauthenticated, so anyone with the URL can run the graph on my API keys. With the broker mocked there is nothing to lose, but it is the first thing I would change before connecting a real account — either an `auth` block in `langgraph.json`, or serving the graph from a small uvicorn app of my own.
 

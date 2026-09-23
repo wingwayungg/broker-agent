@@ -99,7 +99,7 @@ def build_agent():
     # (`ask()` below, which is what everything in local_api_cli/ calls); the
     # LangGraph API path uses `platform_graph` and its own store instead.
     # That store has the same caveat in prod: `langgraph dev` pickles it to
-    # .langgraph_api/, which survives a local restart but not a Render
+    # .langgraph_api/, which survives a local restart but not a server
     # restart or free-tier spin-down (ephemeral filesystem).
     checkpointer = MemorySaver()
     return _build_graph().compile(checkpointer=checkpointer)

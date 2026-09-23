@@ -3,7 +3,7 @@ FastAPI wrapper around the agent. Kept deliberately thin — the graph in
 app/agent.py has all the logic, this just exposes it over HTTP and gives
 each caller a stable thread_id so multi-turn memory works per-session.
 
-This is a local alternative to `langgraph dev` (which is what Render runs),
+This is a local alternative to `langgraph dev` (which is what Fly runs),
 so fastapi/uvicorn live in requirements-dev.txt, not requirements.txt.
 Run with `uvicorn local_api_cli.api:app --reload` from the repo root.
 """

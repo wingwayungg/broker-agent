@@ -1,6 +1,5 @@
-# Runtime deps only -- this is what the Render Docker image installs, so
-# keep it lean (512MB free-tier instance). Dev/local extras live in
-# requirements-dev.txt.
+# Runtime deps only -- this is what the Fly Docker image installs, so
+# keep it lean (512MB VM). Dev/local extras live in requirements-dev.txt.
 #
 # Production runs `langgraph dev`; the FastAPI /ask wrapper
 # (local_api_cli/api.py) is a local alternative, so fastapi + uvicorn are in

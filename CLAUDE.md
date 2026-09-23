@@ -13,10 +13,9 @@ python -m pytest tests/test_tools.py::test_buy_stock_requires_two_affirmative_co
 
 python -m local_api_cli.cli            # terminal chat loop (in-process, MemorySaver)
 uvicorn local_api_cli.api:app --reload # FastAPI: POST /ask {"question": ..., "thread_id": ...}
-langgraph dev                          # LangGraph API on :2024 + browser chat UI at / (what Render runs)
+langgraph dev                          # LangGraph API on :2024 + browser chat UI at / (what Fly runs)
+fly deploy                             # deploys the Dockerfile; app name in fly.toml
 ```
-
-Render deploys are triggered by pushing to the connected branch (`render.yaml` blueprint; service name in there).
 
 There is no linter/formatter config. `.env` holds `GROQ_API_KEY`, `TAVILY_API_KEY`, optional `LLM_PROVIDER`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
 
@@ -42,7 +41,7 @@ data           app/market_data.py  (Yahoo chart endpoint, Tavily /search)
 config           app/config.py  (settings, get_llm())      app/models.py (Pydantic contract)
 ```
 
-Imports only go downward. `local_api_cli/` holds the in-process runners (terminal chat and FastAPI `/ask`); they don't import each other, both just call `ask()`. It's named for its two contents rather than "local" because `tests/` and `notebooks/` are local too. Nothing in `local_api_cli/` ships to Render — it's in `.dockerignore` and its deps (`fastapi`, `uvicorn`) are dev-only. Run them as `python -m local_api_cli.cli` / `uvicorn local_api_cli.api:app`, not `python local_api_cli/cli.py`, so the repo root stays on `sys.path`. `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
+Imports only go downward. `local_api_cli/` holds the in-process runners (terminal chat and FastAPI `/ask`); they don't import each other, both just call `ask()`. It's named for its two contents rather than "local" because `tests/` and `notebooks/` are local too. Nothing in `local_api_cli/` ships to Fly — it's in `.dockerignore` and its deps (`fastapi`, `uvicorn`) are dev-only. Run them as `python -m local_api_cli.cli` / `uvicorn local_api_cli.api:app`, not `python local_api_cli/cli.py`, so the repo root stays on `sys.path`. `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
 
 ### One turn, end to end
 
@@ -51,7 +50,7 @@ Imports only go downward. `local_api_cli/` holds the in-process runners (termina
 3. `ToolNode` runs the tool. Read-only tools return formatted strings that the LLM turns into prose/tables on the next loop. `buy_stock` may instead hit `interrupt()`, which surfaces as `__interrupt__` in the result — the caller shows `value["message"]` and waits for a human.
 4. Loop continues until the model replies without tool calls.
 
-Memory is per `thread_id` and never in a real database (`MemorySaver` in-process, or LangGraph API's own store under `langgraph dev`, which pickles to `.langgraph_api/`). Either way it doesn't survive deployment: Render's filesystem is ephemeral and the free tier spins down when idle, so a cold start comes back with no threads. The browser UI handles this by catching a 404 on its stored thread and transparently starting a new one.
+Memory is per `thread_id` and never in a real database (`MemorySaver` in-process, or LangGraph API's own store under `langgraph dev`, which pickles to `.langgraph_api/`). Either way it doesn't survive deployment: Fly's filesystem is ephemeral and the free tier spins down when idle, so a cold start comes back with no threads. The browser UI handles this by catching a 404 on its stored thread and transparently starting a new one.
 
 ### Two compiled graphs, two entry paths
 
@@ -84,4 +83,4 @@ The mock `BrokerClient` also uses `fetch_current_price` for live position/quote 
 
 - The system prompt in `app/agent.py` asks for GFM tables for multi-row results; the frontend has a hand-rolled markdown renderer (`renderMarkdown`) that only handles paragraphs, inline bold/italic/code, lists, and tables — extend it if the prompt starts requesting other markdown.
 - The agent must not give buy/sell/hold advice; trading-decision questions are routed to `research_stock`. Keep new prompts and tool docstrings consistent with that.
-- Deployment target is a 512MB Render free-tier instance (`render.yaml`); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, notebooks, and README from the image.
+- Deployment target is a 512MB Fly VM (`fly.toml`); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, notebooks, and README from the image.
