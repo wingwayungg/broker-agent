@@ -6,6 +6,7 @@
 # (local_api_cli/api.py) is a local alternative, so fastapi + uvicorn are in
 # requirements-dev.txt.
 langgraph>=0.2.0
+# Move it to requirements-dev.txt if switching to `langgraph build`
 langgraph-cli[inmem]>=0.1.55
 langchain-core>=0.3.0
 langchain-groq>=0.2.0
