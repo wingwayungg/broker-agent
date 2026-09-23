@@ -211,7 +211,6 @@ main {
 .table-wrap th,
 .table-wrap td {
   padding: 8px 14px;
-  white-space: nowrap;
 }
 
 .table-wrap thead th {

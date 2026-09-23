@@ -15,25 +15,74 @@ This is a simple chat website where you can ask questions about a stock portfoli
 
 ## Ask the assistant
 
-A chat box sits at the bottom of the page. It sends your question to the assistant, which decides which of its seven tools to use (positions, account summary, open orders, recent fills, bracket order status, research, buy), reads the result, and writes a short answer back. Below are real exchanges against the demo account. Answers are quoted as given, shortened where they ran long; where the answer was a table, it is described in *italics*:
+A chat box sits at the bottom of the page. It sends your question to the assistant, which decides which of its seven tools to use (positions, account summary, open orders, recent fills, bracket order status, research, buy), reads the result, and writes a short answer back. Two conversations with the demo account, in the order they happened:
 
-| Prompt | Answer |
-|--------|--------|
-| What am I holding right now? | *A table: AAPL 150 shares (+81.0%), NVDA 40 shares (+91.9%), MSFT 60 shares (+24.8%), with average cost, current price and market value* |
-| Which of those are in profit? | All three of your current holdings are showing a profit … Each position's unrealized P&L is positive, so every stock you own is currently in profit. |
-| How much cash do I have? | You have **$41,200.00** in cash available in your account. |
-| Do I have any open orders? | *A table with one order: BUY 20 TSLA, limit $245.00, Submitted* |
-| Sell all my NVDA | I'm not able to place sell orders or cancel existing positions. I can only help you research a stock, view your current holdings, or place a **buy** order. |
-| Should I buy TSLA? | *Three short sections — fundamentals, technicals, news — followed by:* I'm not able to give personal investment advice or tell you whether to buy or not. Use the information above to make your own decision … |
-| Buy some Apple | Sure! How many shares of **AAPL** would you like to purchase? |
-| Buy 100000 shares of NVDA | I'm unable to place that order — the estimated cost of ≈ $22.7 million for 100 000 NVDA shares exceeds the buying power available in the account. |
-| Buy 10 shares of AAPL | Confirm order: BUY 10.0 AAPL @ ~$338.98 (estimated cost $3,389.80). Reply 'yes' to continue or 'no' to cancel. |
-| yes | Final confirmation — this will submit a real order: BUY 10.0 AAPL @ ~$338.98 (estimated cost $3,389.80). This cannot be undone once submitted. Reply 'yes' to submit or 'no' to cancel. |
-| no | The order wasn't placed because the required confirmations weren't given, so no shares were bought. |
+### Demo conversation 1 (trading) — guardrails and human-in-the-loop
 
-The last seven rows show the guardrails. The assistant has no way to sell, cancel or modify anything — those tools simply don't exist, so it cannot do them however it is asked. It will not tell you whether to buy or sell; a question like "should I buy TSLA?" is answered with research and a reminder that the decision is yours. A vague instruction ("buy some Apple") gets a question back rather than a guessed quantity, and an order the account can't afford is refused on the spot. Even a valid buy order never goes through on the assistant's say-so: it asks a real person to confirm twice, and anything other than a clear "yes" cancels it.
+> **You —** What am I holding right now?
+>
+> **Assistant —** *A table: AAPL 150 shares (+81.0%), NVDA 40 shares (+91.9%), MSFT 60 shares (+24.8%), with average cost, current price and market value*
+>
+> **You —** Which of those are in profit?
+>
+> **Assistant —** All three of your current holdings are showing a profit … Each position's unrealized P&L is positive, so every stock you own is currently in profit.
+>
+> **You —** How much cash do I have?
+>
+> **Assistant —** You have **$41,200.00** in cash available in your account.
+>
+> **You —** Do I have any open orders?
+>
+> **Assistant —** *A table with one order: BUY 20 TSLA, limit $245.00, Submitted*
+>
+> **You —** Sell all my NVDA
+>
+> **Assistant —** I'm not able to place sell orders or cancel existing positions. I can only help you research a stock, view your current holdings, or place a **buy** order.
+>
+> **You —** Should I buy TSLA?
+>
+> **Assistant —** *Three short sections — fundamentals, technicals, news — followed by:* I'm not able to give personal investment advice or tell you whether to buy or not. Use the information above to make your own decision …
+>
+> **You —** Buy some Apple
+>
+> **Assistant —** Sure! How many shares of **AAPL** would you like to purchase?
+>
+> **You —** Buy 100000 shares of NVDA
+>
+> **Assistant —** I'm unable to place that order — the estimated cost of ≈ $22.7 million for 100 000 NVDA shares exceeds the buying power available in the account.
+>
+> **You —** Buy 10 shares of AAPL
+>
+> **Assistant —** Confirm order: BUY 10.0 AAPL @ ~$338.98 (estimated cost $3,389.80). Reply 'yes' to continue or 'no' to cancel.
+>
+> **You —** yes
+>
+> **Assistant —** Final confirmation — this will submit a real order: BUY 10.0 AAPL @ ~$338.98 (estimated cost $3,389.80). This cannot be undone once submitted. Reply 'yes' to submit or 'no' to cancel.
+>
+> **You —** no
+>
+> **Assistant —** The order wasn't placed because the required confirmations weren't given, so no shares were bought.
 
-> **Note:** the live demo runs on Render's free tier, which puts the server to sleep after 15 minutes without visitors. The first page load after a quiet spell can take up to a minute while it wakes up; after that, most answers arrive in a second or two. Research questions take around 20 seconds because they run four AI calls and several web searches.
+The last seven exchanges show the guardrails. The assistant has no way to sell, cancel or modify anything — those tools simply don't exist, so it cannot do them however it is asked. It will not tell you whether to buy or sell; a question like "should I buy TSLA?" is answered with research and a reminder that the decision is yours. A vague instruction ("buy some Apple") gets a question back rather than a guessed quantity, and an order the account can't afford is refused on the spot. Even a valid buy order never goes through on the assistant's say-so: it asks a real person to confirm twice, and anything other than a clear "yes" cancels it.
+
+### Demo conversation 2 (research) — thread memory
+> **You —** hood
+>
+> **Assistant —** *Research on Robinhood Markets (HOOD) — fundamentals, technicals and news, condensed into three paragraphs …*
+>
+> **You —** crcl
+>
+> **Assistant —** *The same three-part research for Circle Internet Group (CRCL) …*
+>
+> **You —** compare two stocks
+>
+> **Assistant —** *A table putting HOOD and CRCL side by side on price, 52-week range and recent momentum, followed by:* … which of the two suits you is your call, not mine.
+>
+> **You —** compare them to coin
+>
+> **Assistant —** *Fresh research on Coinbase (COIN), then the same table widened to all three …*
+
+Nothing after the first message names a company again. "Compare two stocks" has no subject of its own — the assistant resolves it to HOOD and CRCL because those are the two it just researched in this thread — and "them" in the next message resolves to that same pair, which is how COIN gets added to a comparison rather than replacing it. Each browser tab is its own thread, so a second tab starts with none of this.
 
 ## Technical Features
 
@@ -51,17 +100,7 @@ The last seven rows show the guardrails. The assistant has no way to sell, cance
 
 - **A small, hand-written browser page.** The page streams replies straight from the LangGraph API, turns the confirmation prompt into Yes/No buttons, renders the model's markdown tables as real tables, and rebuilds the chat log from the server's thread state on reload — so refreshing mid-answer doesn't lose anything. Conversations live in the server's memory, not a database; after a redeploy the page notices its old thread is gone and quietly starts a new one.
 
-## Quality Control
-
-The project has 29 automated tests that run offline (network calls are stubbed) in under a second, so they run before every change:
-
-```
-$ python -m pytest -q
-.............................                                            [100%]
-29 passed in 0.91s
-```
-
-The buy-order tests are the important ones. Instead of faking the confirmation step, they build a tiny real LangGraph graph around the tool and drive it with a hand-made "buy" instruction, checking that the order is only submitted after two explicit "yes" replies, that a "no" at either step submits nothing, and that an unaffordable order is refused before any confirmation. One test also asserts that `buy_stock` is the only tool capable of placing an order, so quietly adding a sell tool later would fail the suite.
+> **Note:** because that memory is in-process, a conversation is lost whenever the server restarts or the free instance spins down after a quiet spell — the page starts a fresh thread and the earlier answers are gone. Refreshing the tab is safe; only a server restart clears it. Persisting chat history properly would need a real database behind the checkpointer, which is the natural next step for this project.
 
 ## Programming Languages
 
