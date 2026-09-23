@@ -92,10 +92,13 @@ def test_research_stock_returns_three_paragraph_summary():
 
     # Both web-backed researchers must search by company name, not just the
     # ticker, and fundamentals must not be restricted to a recent-news window.
+    # Keyed on the stable topic word so rewording a query doesn't break this.
     calls = {c.args[1]: c.kwargs for c in mock_web.call_args_list}
     assert all(kw["company_name"] == "Apple Inc." for kw in calls.values())
-    assert calls["latest quarterly earnings, revenue, and profit margins"]["recent_days"] is None
-    assert "recent_days" not in calls["recent news and catalysts"]
+    fundamentals = next(kw for q, kw in calls.items() if "earnings" in q)
+    news = next(kw for q, kw in calls.items() if "news" in q)
+    assert fundamentals["recent_days"] is None
+    assert "recent_days" not in news
 
 
 def test_buy_stock_is_the_only_order_placing_tool():
