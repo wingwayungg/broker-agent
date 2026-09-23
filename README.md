@@ -1,4 +1,4 @@
-# Broker Portfolio Agent
+# Broker Portfolio AI Agent
 
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-1C3C3C?logo=langgraph&logoColor=white)](https://www.langchain.com/langgraph)
 [![LLM by Groq](https://img.shields.io/badge/LLM-Groq-F55036)](https://groq.com/)
