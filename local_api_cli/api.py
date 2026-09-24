@@ -31,5 +31,5 @@ def ask_endpoint(payload: Question) -> Answer:
     return Answer(answer=answer)
 
 @app.get("/health")
-def health() -> dict:
+async def health() -> dict:
     return {"status": "ok"}
