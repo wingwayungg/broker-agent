@@ -12,7 +12,6 @@ project and not just a LangChain chain.
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.types import Command
 
 from app.config import get_llm
 from app.tools import ALL_TOOLS
@@ -96,7 +95,7 @@ def build_agent():
     # follow-up questions in the same session have context. Swap for a
     # persistent checkpointer (e.g. SqliteSaver) if you want sessions to
     # survive a restart. This checkpointer only serves the in-process path
-    # (`ask()` below, which is what everything in local_api_cli/ calls); the
+    # (`ask()` in local_api_cli/session.py, and the notebooks); the
     # LangGraph API path uses `platform_graph` and its own store instead.
     # That store has the same caveat in prod: `langgraph dev` pickles it to
     # .langgraph_api/, which survives a local restart but not a server
@@ -112,25 +111,3 @@ agent = build_agent()
 # raises on load if the compiled graph already has a custom checkpointer
 # attached, so this variant is compiled without one.
 platform_graph = _build_graph().compile()
-
-
-def ask(question: str, thread_id: str = "default") -> str:
-    """Convenience wrapper used by both the CLI and the FastAPI endpoint.
-
-    Transparently doubles as the resume path for buy_stock's confirmation
-    interrupts: if this thread is currently paused waiting on a human
-    answer, `question` is treated as that answer (via Command(resume=...))
-    instead of a new user message. Callers don't need to know the
-    difference — they just keep calling ask() with whatever the user typed
-    next, whether that's a new question or "yes"/"no" to a pending order.
-    """
-    config = {"configurable": {"thread_id": thread_id}}
-    state = agent.get_state(config)
-    if state.interrupts:
-        result = agent.invoke(Command(resume=question), config=config)
-    else:
-        result = agent.invoke({"messages": [("user", question)]}, config=config)
-
-    if "__interrupt__" in result:
-        return result["__interrupt__"][0].value["message"]
-    return result["messages"][-1].content

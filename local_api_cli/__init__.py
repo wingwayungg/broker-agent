@@ -5,10 +5,10 @@ notebooks/ run locally too; what's specific here is the pair of entry
 points. Nothing in here is served on Fly -- production is `langgraph dev`
 (see langgraph.json), which uses `platform_graph` and mounts app/frontend.py.
 
-Both modules go through `ask()` in app/agent.py, i.e. the MemorySaver-backed
-`agent` graph that infers resume-vs-new-message from thread state. They
-don't import each other; they're grouped because they share that path and
-its dev-only dependencies (requirements-dev.txt). The folder is excluded
+Both modules go through `ask()` in session.py, which drives app/agent.py's
+MemorySaver-backed `agent` graph and infers resume-vs-new-message from
+thread state. They don't import each other; they're grouped because they
+share that path and its dev-only dependencies (requirements-dev.txt). The folder is excluded
 from the Docker image via .dockerignore.
 
     python -m local_api_cli.cli              # terminal chat

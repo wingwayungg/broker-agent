@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from fastapi import FastAPI
 
-from app.agent import ask
+from local_api_cli.session import ask
 
 app = FastAPI(title="Broker Portfolio Agent")
 

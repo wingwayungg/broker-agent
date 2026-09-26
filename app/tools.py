@@ -8,11 +8,12 @@ what the prompt says or what the user asks.
 buy_stock's safety isn't a prompt instruction ("please confirm twice") —
 it's enforced by the LangGraph engine itself via two interrupt() calls.
 interrupt() pauses graph execution mid-tool-call and returns control to
-whoever is driving the graph (see ask() in app/agent.py); nothing after
-that point in the function runs until a caller external to the LLM resumes
-it with Command(resume=...). The model that decided to call buy_stock never
-gets to see or answer its own confirmation prompts — it isn't invoked again
-until a real reply comes back through ask(). That's what makes this
+whoever is driving the graph (the browser UI via the LangGraph API, or
+ask() in local_api_cli/session.py); nothing after that point in the
+function runs until a caller external to the LLM resumes it with
+Command(resume=...). The model that decided to call buy_stock never gets
+to see or answer its own confirmation prompts — it isn't invoked again
+until a real reply comes back from a human. That's what makes this
 human-in-the-loop rather than just an LLM being told to ask nicely.
 """
 from langchain_core.tools import tool
