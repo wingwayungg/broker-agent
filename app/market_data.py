@@ -36,6 +36,9 @@ fixed query, never model-chosen, so that abstraction has nothing to add.
 to `/search`; for one hardcoded call with a fixed payload it's an extra
 dependency without an extra capability.
 """
+from threading import Lock
+import time
+
 import requests
 
 from app.config import settings
@@ -43,10 +46,47 @@ from app.config import settings
 _YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 _TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 
+# symbol -> (fetched_at, (meta, closes)). Only successful fetches are stored,
+# so a network failure is retried on the next call rather than remembered.
+_CHART_CACHE_TTL_SECONDS = 60
+_CHART_CACHE_MAX_ENTRIES = 6
+_chart_cache: dict[str, tuple[float, tuple[dict, list[float]]]] = {}
+_chart_cache_lock = Lock()
+
 
 def _fetch_chart_data(symbol: str) -> tuple[dict, list[float]]:
-    """Raw meta + daily closes for a symbol from Yahoo Finance's chart
-    endpoint. Raises on any failure; callers decide how to degrade."""
+    """Raw meta + daily closes for a symbol, cached for a short TTL. Raises
+    on any failure; callers decide how to degrade.
+
+    The same symbol is requested several times in quick succession:
+    research_stock resolves the company name and then fetches the price
+    snapshot, and buy_stock re-runs from the top on every interrupt()
+    resume, quoting the symbol once per confirmation step. Without the cache
+    each of those is a separate Yahoo round trip, and buy_stock's later
+    confirmation messages can show a different price than the one the user
+    agreed to at step 1."""
+    now = time.monotonic()
+    with _chart_cache_lock:
+        cached = _chart_cache.get(symbol)
+    if cached and now - cached[0] < _CHART_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    data = _request_chart_data(symbol)
+    with _chart_cache_lock:
+        _chart_cache.pop(symbol, None)
+        if len(_chart_cache) >= _CHART_CACHE_MAX_ENTRIES:
+            # Dicts keep insertion order and re-fetches re-insert at the end,
+            # so the first key is the oldest entry.
+            _chart_cache.pop(next(iter(_chart_cache)))
+        _chart_cache[symbol] = (now, data)
+    return data
+
+
+def _request_chart_data(symbol: str) -> tuple[dict, list[float]]:
+    """I can add additional caching here
+    , as two users can theoretically fetch the same symbol
+    at roughly the same time despite the lock in outer layer.
+    Since this is a low-traffic app, I prefer not to add a lock here to keep it simple."""
     resp = requests.get(
         _YAHOO_CHART_URL.format(symbol=symbol),
         params={"interval": "1d", "range": "1mo"},

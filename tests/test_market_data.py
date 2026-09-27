@@ -5,7 +5,24 @@ these run offline and don't depend on Yahoo/Tavily being reachable.
 """
 from unittest.mock import MagicMock, patch
 
-from app.market_data import fetch_company_name, fetch_price_snapshot, fetch_web_context
+import pytest
+
+from app import market_data
+from app.market_data import (
+    fetch_company_name,
+    fetch_current_price,
+    fetch_price_snapshot,
+    fetch_web_context,
+)
+
+
+@pytest.fixture(autouse=True)
+def _empty_chart_cache():
+    """Tests reuse the same symbols with different mocked responses, so a
+    chart cached by one test must not answer the next test's request."""
+    market_data._chart_cache.clear()
+    yield
+    market_data._chart_cache.clear()
 
 
 def _yahoo_response(meta: dict, closes: list) -> MagicMock:
@@ -93,6 +110,54 @@ def test_fetch_company_name_returns_none_when_unavailable():
         assert fetch_company_name("P") is None
     with patch("app.market_data.requests.get", return_value=_yahoo_response({}, [])):
         assert fetch_company_name("P") is None
+
+
+def test_chart_data_is_fetched_once_per_symbol_within_ttl():
+    # research_stock's name lookup + price snapshot, and buy_stock's repeated
+    # quotes across interrupt() resumes, should share one Yahoo request.
+    meta = {"regularMarketPrice": 330.0, "longName": "Apple Inc."}
+    with patch(
+        "app.market_data.requests.get", return_value=_yahoo_response(meta, [330.0])
+    ) as mock_get:
+        assert fetch_company_name("AAPL") == "Apple Inc."
+        assert fetch_price_snapshot("AAPL") == "Current price: $330.00"
+        assert fetch_current_price("AAPL") == 330.0
+        fetch_current_price("MSFT")
+
+    assert mock_get.call_count == 2
+
+
+def test_chart_data_is_refetched_after_ttl_expires():
+    with patch("app.market_data.requests.get") as mock_get, patch(
+        "app.market_data.time.monotonic", side_effect=[0.0, 0.0 + market_data._CHART_CACHE_TTL_SECONDS]
+    ):
+        mock_get.side_effect = [
+            _yahoo_response({"regularMarketPrice": 100.0}, []),
+            _yahoo_response({"regularMarketPrice": 105.0}, []),
+        ]
+        assert fetch_current_price("AAPL") == 100.0
+        assert fetch_current_price("AAPL") == 105.0
+
+
+def test_chart_data_failures_are_not_cached():
+    with patch("app.market_data.requests.get", side_effect=ConnectionError("boom")):
+        assert fetch_current_price("AAPL") is None
+    with patch(
+        "app.market_data.requests.get",
+        return_value=_yahoo_response({"regularMarketPrice": 330.0}, []),
+    ):
+        assert fetch_current_price("AAPL") == 330.0
+
+
+def test_chart_cache_evicts_oldest_entry_when_full():
+    with patch.object(market_data, "_CHART_CACHE_MAX_ENTRIES", 2), patch(
+        "app.market_data.requests.get",
+        return_value=_yahoo_response({"regularMarketPrice": 1.0}, []),
+    ):
+        for symbol in ["AAPL", "MSFT", "NVDA"]:
+            fetch_current_price(symbol)
+
+    assert list(market_data._chart_cache) == ["MSFT", "NVDA"]
 
 
 def _tavily_response(results: list) -> MagicMock:
