@@ -1,10 +1,10 @@
 # Broker Portfolio AI Agent
 
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-1C3C3C?logo=langgraph&logoColor=white)](https://www.langchain.com/langgraph)
-[![LLM by Groq](https://img.shields.io/badge/LLM-Groq-F55036)](https://groq.com/)
+[![LLM by Cerebras](https://img.shields.io/badge/LLM-Cerebras-F15A29)](https://www.cerebras.ai/)
 [![Deployed on Fly](https://img.shields.io/badge/Deployed%20on-Fly-8B5CF6?logo=flydotio&logoColor=white)](https://fly.io/)
 
-This is a simple chat website where you can ask questions about a stock portfolio in everyday English — for example "What am I holding right now?" or "Should I buy TSLA?" — and an AI assistant answers by looking up the account and today's market prices. The account behind it is a demo account holding three sample stocks (Apple, Nvidia and Microsoft), so no real money is involved, but the prices are live from [Yahoo Finance](https://finance.yahoo.com/) and the research is built from live web search via [Tavily](https://tavily.com/). This project serves as an exercise to practice building AI agents (powered by [LangGraph](https://www.langchain.com/langgraph) and [Groq](https://groq.com/)) and connecting them to live data. The features of this project include:
+This is a simple chat website where you can ask questions about a stock portfolio in everyday English — for example "What am I holding right now?" or "Should I buy TSLA?" — and an AI assistant answers by looking up the account and today's market prices. The account behind it is a demo account holding three sample stocks (Apple, Nvidia and Microsoft), so no real money is involved, but the prices are live from [Yahoo Finance](https://finance.yahoo.com/) and the research is built from live web search via [Tavily](https://tavily.com/). This project serves as an exercise to practice building AI agents (powered by [LangGraph](https://www.langchain.com/langgraph) and [Cerebras](https://www.cerebras.ai/)) and connecting them to live data. The features of this project include:
 
 - viewing holdings, cash and buying power, open orders and recent trades
 - researching any stock with three AI "analysts" (fundamentals, technicals, news) working in parallel on live data
@@ -102,7 +102,7 @@ Nothing after the first message names a company again. "Compare two stocks" has 
 
 ## Programming Languages
 
-The language I used is Python, with LangGraph and LangChain for the agent, Pydantic for the data models, Starlette for the web layer and plain `requests` for market data. The browser page is hand-written HTML, CSS and JavaScript with no framework. The language model is `openai/gpt-oss-120b` served by Groq (the provider is a single setting in `app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
+The language I used is Python, with LangGraph and LangChain for the agent, Pydantic for the data models, Starlette for the web layer and plain `requests` for market data. The browser page is hand-written HTML, CSS and JavaScript with no framework. The language model is `gpt-oss-120b` served by [Cerebras](https://www.cerebras.ai/) by default, or by [Groq](https://groq.com/) with `LLM_PROVIDER=groq` (the provider is a single setting in `app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
 
 ## Deployment
 
@@ -115,7 +115,8 @@ The image runs `langgraph dev`, which serves the LangGraph API and the browser U
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests or cli script
-# create a .env with GROQ_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true)
+# create a .env with CEREBRAS_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true)
+# to use Groq instead, uncomment langchain-groq in requirements.txt, reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
 
 langgraph dev                 # browser chat at http://localhost:2024/
 python -m local_api_cli.cli   # or chat in the terminal

@@ -1,6 +1,6 @@
 """
-Central config. Keeping provider selection here means swapping Groq for
-Gemini (or anything else) later is a one-line change, not a refactor.
+Central config. Keeping provider selection here means swapping Cerebras for
+Groq or Gemini (or anything else) later is a one-line change, not a refactor.
 """
 import os
 from functools import cache
@@ -11,9 +11,10 @@ load_dotenv()
 
 
 class Settings:
-    llm_provider: str = os.getenv("LLM_PROVIDER", "groq")
+    llm_provider: str = os.getenv("LLM_PROVIDER", "cerebras")
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    cerebras_api_key: str = os.getenv("CEREBRAS_API_KEY", "")
     tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
 
     broker_host: str = os.getenv("BROKER_HOST", "127.0.0.1")
@@ -50,6 +51,17 @@ def get_llm():
         return ChatGoogleGenerativeAI(
             google_api_key=settings.gemini_api_key,
             model="gemini-1.5-flash",
+            temperature=0,
+        )
+    elif settings.llm_provider == "cerebras":
+        # Cerebras exposes an OpenAI-compatible API, so ChatOpenAI with a
+        # base_url avoids langchain-cerebras (pins the old langchain-core 0.3).
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            api_key=settings.cerebras_api_key,
+            base_url="https://api.cerebras.ai/v1",
+            model=os.getenv("CEREBRAS_MODEL", "gpt-oss-120b"),
             temperature=0,
         )
     else:

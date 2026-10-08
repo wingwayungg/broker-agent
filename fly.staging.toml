@@ -1,0 +1,23 @@
+# Staging copy of fly.toml: same image and VM size, separate app and URL, so
+# changes can be tried on Fly before they reach the production app.
+#   fly deploy -c fly.staging.toml
+# Keep the [http_service] and [[vm]] sections in sync with fly.toml by hand.
+# Secrets are per app. Without CEREBRAS_API_KEY the app fails at startup; without
+# TAVILY_API_KEY, research runs without web context:
+#   fly secrets set -a broker-ai-agent-yung-staging CEREBRAS_API_KEY=... TAVILY_API_KEY=...
+app = "broker-ai-agent-yung-staging"
+primary_region = "iad"
+
+[build]
+
+[http_service]
+  internal_port = 2024
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

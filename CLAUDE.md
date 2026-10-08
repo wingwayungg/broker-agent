@@ -15,9 +15,10 @@ python -m local_api_cli.cli            # terminal chat loop (in-process, MemoryS
 uvicorn local_api_cli.api:app --reload # FastAPI: POST /ask {"question": ..., "thread_id": ...}
 langgraph dev                          # LangGraph API on :2024 + browser chat UI at / (what Fly runs)
 fly deploy                             # deploys the Dockerfile; app name in fly.toml
+fly deploy -c fly.staging.toml         # same image to the staging app (broker-ai-agent-yung-staging.fly.dev); secrets are per app, so set CEREBRAS_API_KEY and TAVILY_API_KEY there too
 ```
 
-There is no linter/formatter config. `.env` holds `GROQ_API_KEY`, `TAVILY_API_KEY`, optional `LLM_PROVIDER`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
+There is no linter/formatter config. `.env` holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, optional `LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
 
 ## Architecture
 
@@ -77,7 +78,7 @@ The mock `BrokerClient` also uses `fetch_current_price` for live position/quote 
 
 ### LLM provider
 
-`app/config.get_llm()` is the single switch (`groq` default with `openai/gpt-oss-120b`, `gemini` alternative) and is called fresh for every research sub-agent call. `app/agent.py` binds tools at import time (`_llm_with_tools`), so importing it instantiates the provider client; tests avoid importing `app.agent` and go through `app.tools` directly.
+`app/config.get_llm()` is the single switch (`cerebras` default with `gpt-oss-120b` via its OpenAI-compatible endpoint; `groq` and `gemini` alternatives, whose packages aren't in `requirements.txt` and must be installed first) and is `@cache`d, so every caller shares one client. It raises at startup if the selected provider's API key is unset — a Fly app that only has the old `GROQ_API_KEY` secret must set `CEREBRAS_API_KEY` (or `LLM_PROVIDER=groq`) before deploying. `app/agent.py` binds tools at import time (`_llm_with_tools`), so importing it instantiates the provider client; tests avoid importing `app.agent` and go through `app.tools` directly.
 
 ## Conventions
 
