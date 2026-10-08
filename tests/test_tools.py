@@ -7,7 +7,7 @@ point of the contract.
 from unittest.mock import patch
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode
@@ -16,6 +16,8 @@ from langgraph.types import Command
 from app.tools import (
     ALL_TOOLS,
     buy_stock,
+    compact_earlier_tool_results,
+    normalize_citations,
     get_account_summary,
     get_bracket_order_status,
     get_open_orders,
@@ -178,3 +180,34 @@ def test_buy_stock_rejects_order_exceeding_buying_power_before_any_confirmation(
     assert "__interrupt__" not in result
     final = result["messages"][-1].content
     assert "exceeds available buying power" in final
+
+
+def _tool_turn(question, call_id, tool_name, result):
+    return [
+        HumanMessage(question),
+        AIMessage("", tool_calls=[{"name": tool_name, "args": {}, "id": call_id}]),
+        ToolMessage(result, tool_call_id=call_id, name=tool_name),
+        AIMessage(f"answer to {question}"),
+    ]
+
+
+def test_compact_earlier_tool_results_stubs_only_bulky_results_from_earlier_turns():
+    messages = (
+        _tool_turn("q1", "c1", "search_filings", "EXCERPTS 2025")
+        + _tool_turn("q2", "c2", "get_positions", "POSITIONS TABLE")
+        + _tool_turn("q3", "c3", "search_filings", "EXCERPTS 2026")[:3]
+    )
+
+    compacted = compact_earlier_tool_results(messages)
+
+    old_filings, positions, current_filings = (m for m in compacted if m.type == "tool")
+    assert "EXCERPTS" not in old_filings.content
+    assert old_filings.tool_call_id == "c1"  # still pairs with its tool call
+    assert positions.content == "POSITIONS TABLE"  # follow-ups resolve against these
+    assert current_filings.content == "EXCERPTS 2026"
+    assert messages[2].content == "EXCERPTS 2025"  # input (checkpointed state) untouched
+
+
+def test_normalize_citations_rewrites_gpt_oss_markers_to_bracketed_numbers():
+    text = "Azure grew 34%【5†L1-L7】【2†L3】 and margins held【1】; see [3]."
+    assert normalize_citations(text) == "Azure grew 34%[5][2] and margins held[1]; see [3]."

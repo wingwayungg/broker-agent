@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .langgraph_api/
+evals/
 .ipynb_checkpoints/
 *.ipynb
 notebooks/
@@ -19,4 +20,3 @@ README.md
 .idea/
 .DS_Store
 fly.toml
-fly.staging.toml

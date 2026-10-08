@@ -21,7 +21,9 @@ function escapeHtml(s) {
 }
 
 function inlineMd(s) {
-    s = escapeHtml(s);
+    // Same rewrite as normalize_citations in app/tools.py, applied here too
+    // because streamed tokens reach the page before call_model returns.
+    s = escapeHtml(s).replace(/【(\d+)(?:†[^】]*)?】/g, "[$1]");
     s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");

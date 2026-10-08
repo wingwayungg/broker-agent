@@ -5,6 +5,21 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Bake the embedding model into the image so the first filings search after
+# a cold start doesn't wait on a Hugging Face download. It's saved at the
+# precision it will run at: model2vec loads the full float32 weights before
+# quantizing, so quantizing at runtime still pays the float32 peak, which
+# for the 32M model is ~85MB more server peak; float16 scores the same in
+# evals/.
+ARG EMBEDDING_MODEL=minishlab/potion-retrieval-32M
+ARG EMBEDDING_DTYPE=float16
+# The Hub download cache (always float32) is deleted once the copy is saved.
+RUN python -c "from model2vec import StaticModel; StaticModel.from_pretrained('${EMBEDDING_MODEL}', quantize_to='${EMBEDDING_DTYPE}').save_pretrained('/models/${EMBEDDING_MODEL}')" \
+    && rm -rf /root/.cache/huggingface
+# The path ends in the model name, so app/rag.py's per-model `variant`
+# naming still applies.
+ENV EMBEDDING_MODEL=/models/${EMBEDDING_MODEL} HF_HUB_OFFLINE=1
+
 COPY . .
 
 EXPOSE 2024

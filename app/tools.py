@@ -16,10 +16,14 @@ to see or answer its own confirmation prompts — it isn't invoked again
 until a real reply comes back from a human. That's what makes this
 human-in-the-loop rather than just an LLM being told to ask nicely.
 """
+import re
+
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 from app.broker_client import broker_client
+from app.rag import SectionName
+from app.rag import search_filings as _search_filings
 from app.research import research_stock as _research_stock
 
 
@@ -114,6 +118,26 @@ def research_stock(symbol: str) -> str:
 
 
 @tool
+def search_filings(
+    symbol: str,
+    query: str,
+    fiscal_year: int | None = None,
+    section: SectionName | None = None,
+) -> str:
+    """Search a company's own annual reports (its two most recent SEC 10-K
+    filings) and return numbered excerpts with citations. Use this for
+    questions about what a company itself discloses: its business and
+    segments, risk factors, management's discussion of results, or market
+    risk — and for how that disclosure changed between years. `query` is
+    what to look for, in plain words. `fiscal_year` (the company's own
+    fiscal-year label) defaults to the most recent filing; pass the older
+    year explicitly to search it. Optionally narrow by `section` (business,
+    risk_factors, mdna, market_risk). The first search for a company takes
+    several seconds while its filings are downloaded and indexed."""
+    return _search_filings(symbol, query, fiscal_year=fiscal_year, section=section)
+
+
+@tool
 def buy_stock(symbol: str, quantity: float) -> str:
     """Buy shares of a stock. This is the only order-placing tool in the
     whole project — there is no sell/cancel/modify equivalent. It requires
@@ -189,5 +213,50 @@ ALL_TOOLS = [
     get_recent_fills,
     get_bracket_order_status,
     research_stock,
+    search_filings,
     buy_stock,
 ]
+
+
+# Tools whose results are long and already relayed in the agent's own reply:
+# search_filings returns ~2k tokens of excerpts per call, which the reply
+# quotes and cites; research_stock's summary is presented near-verbatim.
+# Groq's free tier caps gpt-oss-120b at 8k tokens per minute, so carrying
+# every earlier turn's excerpts into every later request first throttles a
+# thread and then fails it outright with a 413. Broker tool results are
+# short and are what follow-ups like "which of those are up 5%?" resolve
+# against, so they're kept whole.
+_COMPACTED_TOOLS = {search_filings.name, research_stock.name}
+
+
+def compact_earlier_tool_results(messages: list) -> list:
+    """The message list to send the LLM: bulky tool results from turns
+    before the latest user message are replaced with a stub. The current
+    turn's results stay whole, and the stub keeps each ToolMessage (and its
+    tool_call_id) in place, since providers reject a tool call with no
+    matching result. Only the copy sent to the LLM changes — the checkpointed
+    thread still holds the full results."""
+    last_user = max((i for i, m in enumerate(messages) if m.type == "human"), default=-1)
+    return [
+        m.model_copy(
+            update={
+                "content": f"[{m.name} result from an earlier turn omitted; "
+                "call the tool again if you need it]"
+            }
+        )
+        if i < last_user and m.type == "tool" and m.name in _COMPACTED_TOOLS
+        else m
+        for i, m in enumerate(messages)
+    ]
+
+
+# gpt-oss cites in its built-in browsing tool's format, 【2†L1-L5】, even
+# though the system prompt asks for [2]. The line range doesn't refer to
+# anything in search_filings' excerpts, and the frontend would show the
+# raw markers, so they're rewritten to the [n] the Sources list uses.
+# app/static/app.js applies the same rewrite to the reply while it streams.
+_OSS_CITATION = re.compile(r"【(\d+)(?:†[^】]*)?】")
+
+
+def normalize_citations(text: str) -> str:
+    return _OSS_CITATION.sub(r"[\1]", text)

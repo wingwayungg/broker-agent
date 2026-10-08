@@ -1,5 +1,5 @@
 # Runtime deps only -- this is what the Fly Docker image installs, so
-# keep it lean (512MB VM). Dev/local extras live in requirements-dev.txt.
+# keep it lean (1GB VM). Dev/local extras live in requirements-dev.txt.
 #
 # Production runs `langgraph dev`; the FastAPI /ask wrapper
 # (local_api_cli/api.py) is a local alternative, so fastapi + uvicorn are in
@@ -14,3 +14,11 @@ langchain-openai>=1.0.0  # Cerebras, via its OpenAI-compatible endpoint
 pydantic>=2.7.0
 python-dotenv>=1.0.0
 requests>=2.31.0
+# Local static embeddings for 10-K search (app/rag.py). numpy-only at
+# inference, ~30MB model; no torch.
+model2vec>=0.9.0
+numpy>=2.0.0
+# MongoDB Atlas holds the 10-K index; hybrid BM25 + vector search with RRF
+# runs in Atlas (see app/rag.py). 4.10+ for float32 BSON vectors.
+pymongo>=4.10
+langchain-text-splitters>=1.0.0

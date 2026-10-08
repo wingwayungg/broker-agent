@@ -16,6 +16,13 @@ class Settings:
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     cerebras_api_key: str = os.getenv("CEREBRAS_API_KEY", "")
     tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+    # EDGAR requires "Name contact@email" here; see app/sec_filings.py.
+    sec_user_agent: str = os.getenv("SEC_USER_AGENT", "")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "minishlab/potion-retrieval-32M")
+    # MongoDB Atlas cluster holding the 10-K index (see app/rag.py). Unset
+    # means search_filings reports itself unavailable; nothing else needs it.
+    mongodb_uri: str = os.getenv("MONGODB_URI", "")
+    mongodb_db: str = os.getenv("MONGODB_DB", "broker_agent")
 
     broker_host: str = os.getenv("BROKER_HOST", "127.0.0.1")
     broker_port: int = int(os.getenv("BROKER_PORT", "7497"))
@@ -66,3 +73,20 @@ def get_llm():
         )
     else:
         raise ValueError(f"Unknown LLM_PROVIDER: {settings.llm_provider}")
+
+
+@cache
+def get_embedder():
+    """
+    The embedding model behind app/rag.py: anything with
+    encode(list[str]) -> 2D numpy array. A local model2vec static model by
+    default (why: see app/rag.py's docstring); EMBEDDING_MODEL picks another
+    model2vec model from the Hugging Face hub.
+
+    Cached and imported lazily: loading reads 65-130MB of weights (float16
+    as baked by the Dockerfile, float32 from the hub), which only the first
+    filings search should pay for.
+    """
+    from model2vec import StaticModel
+
+    return StaticModel.from_pretrained(settings.embedding_model)

@@ -8,6 +8,7 @@ This is a simple chat website where you can ask questions about a stock portfoli
 
 - viewing holdings, cash and buying power, open orders and recent trades
 - researching any stock with three AI "analysts" (fundamentals, technicals, news) working in parallel on live data
+- asking what a company says about itself in its annual reports (SEC 10-K filings), answered with numbered citations
 - placing a buy order — but only after a human says "yes" twice
 - follow-up questions ("which of those are in profit?") within the same conversation
 - conversations that survive a browser reload
@@ -94,7 +95,20 @@ Nothing after the first message names a company again. "Compare two stocks" has 
 
 - **Live data instead of the model's memory.** A language model's knowledge of prices, earnings and news is out of date (for the LLM used in this project, the training data is from 2024). Latest data is obtained from Tavily web search and Yahoo Finance.
 
-- **Plain `requests` rather than MCP or vendor SDKs.** Real-time market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: the result is more deterministic and what MCP is actually good at — letting a model discover and pick among tools — has nothing to add here. The REST APIs already do the job that an MCP server does, and one `requests.get` is lighter on a 512MB instance than an extra dependency chain (see the full reasoning in `app/market_data.py`).
+- **Retrieval-augmented search over 10-K filings.** A question like "what supply-chain risks does NVIDIA disclose, and did that change since last year?" goes to a `search_filings` tool. The first time a company is asked about, its two most recent 10-Ks are downloaded from SEC EDGAR, cut down to the sections people ask about (business, risk factors, management's discussion, market risk), split into ~250-word chunks on paragraph boundaries, and stored in [MongoDB Atlas](https://www.mongodb.com/atlas) with both a vector index and a full-text (BM25) index. Each search is Atlas's hybrid search within the company/year/section filter, merged by its built-in reciprocal-rank fusion (`$rankFusion`); the model answers only from the returned excerpts and cites them by number. Atlas was chosen because hybrid search is built in, so no ranking code lives in the app, and because the same cluster can later store chat history too. The index lives outside the VM, so a company indexed once stays indexed across restarts and redeploys. Retrieval is needed rather than pasting the filings into the prompt: two 10-Ks are well over 100k tokens. Embeddings are local [model2vec](https://github.com/MinishLab/model2vec) static embeddings rather than a hosted embedding API (free tiers are too rate-limited to index a filing on demand) or a torch model (too big for the VM) — see `app/rag.py`.
+
+- **Measured, not assumed.** `python -m evals.filings_eval` scores retrieval against 20 hand-written questions whose answers are known to be in the filings (plus two that aren't, to check the model declines instead of guessing), and with `--judge` has the LLM grade generated answers for faithfulness to the excerpts. On the current set (hit@5 = a chunk containing the answer is in the top 5):
+
+  | embedding model | BM25 | dense | hybrid | server peak RAM on Fly (before LanceDB) |
+  |---|---:|---:|---:|---:|
+  | potion-base-8M | 0.65 | 0.35 | 0.60 | ~240MB |
+  | potion-retrieval-32M, float16 (production) | 0.70 | 0.60 | 0.75 | ~315MB |
+
+  The production row is measured on MongoDB Atlas; the potion-base-8M row dates from the earlier LanceDB index, whose BM25 scored 0.55 with the production model (Atlas's Lucene English analyzer scores 0.70).
+
+  With the small model, dense retrieval adds nothing measurable over keywords alone; the retrieval-tuned model is where hybrid search pays off. Loaded at full precision it would peak near 400MB (about 85MB more than needed) because model2vec reads the float32 weights before quantizing, so the Docker build saves a float16 copy instead, which scores the same in the eval and is what production runs.
+
+- **Plain `requests` rather than MCP or vendor SDKs.** Real-time market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: the result is more deterministic and what MCP is actually good at — letting a model discover and pick among tools — has nothing to add here. The REST APIs already do the job that an MCP server does, and one `requests.get` is lighter on a small instance than an extra dependency chain (see the full reasoning in `app/market_data.py`).
 
 - **Thread memory.** Refreshing the browser doesn't lose the chat history, as conversations live in the server's memory. However, the conversation is lost whenever the server restarts or the free instance spins down (e.g. redeployment or the chat is idle for certain time). Persisting chat history properly would need a real database behind the checkpointer, which is the natural next step for this project.
 
@@ -115,10 +129,14 @@ The image runs `langgraph dev`, which serves the LangGraph API and the browser U
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests or cli script
-# create a .env with CEREBRAS_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true)
+# create a .env with CEREBRAS_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true),
+# and SEC_USER_AGENT="Your Name you@example.com" for 10-K search (EDGAR requires a contact)
+# plus MONGODB_URI for 10-K search: a free Atlas M0 cluster in AWS us-east-1 (near Fly's iad), a database user,
+# and Network Access 0.0.0.0/0 (Fly machines have no static IP); set the same URI on Fly with `fly secrets set MONGODB_URI=...`
 # to use Groq instead, uncomment langchain-groq in requirements.txt, reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
 
 langgraph dev                 # browser chat at http://localhost:2024/
 python -m local_api_cli.cli   # or chat in the terminal
-python -m pytest              # run the tests
+python -m pytest              # run the tests (Atlas ones need MONGODB_TEST_URI; see tests/test_rag_atlas.py)
+python -m evals.filings_eval  # score 10-K retrieval (add --judge to grade answers with the LLM)
 ```

@@ -14,14 +14,15 @@ from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from app.config import get_llm
-from app.tools import ALL_TOOLS
+from app.tools import ALL_TOOLS, compact_earlier_tool_results, normalize_citations
 
 SYSTEM_PROMPT = """You are a portfolio assistant with access to a live
 broker account via tools. You can report on positions, account
 summary, open orders, fills, and bracket order status. You can research any
 stock — not just ones the user holds — via research_stock, which fans out
 to three sub-agents (fundamentals, technicals, news/sentiment) and returns
-a three-paragraph informational summary. You can also buy stock via the
+a three-paragraph informational summary. You can search a company's own
+SEC 10-K annual reports via search_filings. You can also buy stock via the
 buy_stock tool.
 
 Hard rules:
@@ -47,6 +48,16 @@ Hard rules:
   summary, then remind the user you can't tell them what to do — don't
   just decline the question outright, and don't call buy_stock unless they
   give an explicit buy instruction with a symbol and quantity.
+- For questions about what a company discloses in its annual report — its
+  business, segments, risk factors, management's discussion of results,
+  market risk, or how any of those changed year over year — call
+  search_filings rather than research_stock. It searches only the most
+  recent filing unless you pass fiscal_year, so to compare years, search
+  each fiscal year separately with fiscal_year set. Answer only from the returned excerpts and cite
+  each claim with the excerpt's number in brackets, e.g. [2]; end with a
+  short "Sources" list giving each cited number's citation line. If the
+  excerpts don't answer the question, say so rather than filling in from
+  memory, and try a narrower or reworded search at most once.
 - If a tool call fails or a live connection isn't available, say so plainly
   rather than guessing at numbers.
 - When get_positions, get_open_orders, or get_recent_fills returns more
@@ -68,7 +79,9 @@ def call_model(state: MessagesState):
         from langchain_core.messages import SystemMessage
 
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
-    response = _llm_with_tools.invoke(messages)
+    response = _llm_with_tools.invoke(compact_earlier_tool_results(messages))
+    if isinstance(response.content, str):
+        response.content = normalize_citations(response.content)
     return {"messages": [response]}
 
 
