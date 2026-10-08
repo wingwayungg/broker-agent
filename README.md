@@ -95,18 +95,17 @@ Nothing after the first message names a company again. "Compare two stocks" has 
 
 - **Live data instead of the model's memory.** A language model's knowledge of prices, earnings and news is out of date (for the LLM used in this project, the training data is from 2024). Latest data is obtained from Tavily web search and Yahoo Finance.
 
-- **Retrieval-augmented search over 10-K filings.** A question like "what supply-chain risks does NVIDIA disclose, and did that change since last year?" goes to a `search_filings` tool. The first time a company is asked about, its two most recent 10-Ks are downloaded from SEC EDGAR, cut down to the sections people ask about (business, risk factors, management's discussion, market risk), split into ~250-word chunks on paragraph boundaries, and stored in [MongoDB Atlas](https://www.mongodb.com/atlas) with both a vector index and a full-text (BM25) index. Each search is Atlas's hybrid search within the company/year/section filter, merged by its built-in reciprocal-rank fusion (`$rankFusion`); the model answers only from the returned excerpts and cites them by number. Atlas was chosen because hybrid search is built in, so no ranking code lives in the app, and because the same cluster can later store chat history too. The index lives outside the VM, so a company indexed once stays indexed across restarts and redeploys. Retrieval is needed rather than pasting the filings into the prompt: two 10-Ks are well over 100k tokens. Embeddings are local [model2vec](https://github.com/MinishLab/model2vec) static embeddings rather than a hosted embedding API (free tiers are too rate-limited to index a filing on demand) or a torch model (too big for the VM) — see `app/rag.py`.
+- **Retrieval-augmented search (RAG) over 10-K filings.** A question like "what supply-chain risks does NVIDIA disclose, and did that change since last year?" goes to a `search_filings` tool. The first time a company is asked about, its two latest 10-Ks are fetched from SEC EDGAR, trimmed to the key sections, chunked, and stored in [MongoDB Atlas](https://www.mongodb.com/atlas), whose built-in hybrid search (vector + BM25) finds the relevant excerpts; the model answers only from them and cites them by number. Two 10-Ks are well over 100k tokens, too many to paste into the prompt. Embeddings are local [model2vec](https://github.com/MinishLab/model2vec) static embeddings, light enough for the VM — see `app/rag.py`.
 
-- **Measured, not assumed.** `python -m evals.filings_eval` scores retrieval against 20 hand-written questions whose answers are known to be in the filings (plus two that aren't, to check the model declines instead of guessing), and with `--judge` has the LLM grade generated answers for faithfulness to the excerpts. On the current set (hit@5 = a chunk containing the answer is in the top 5):
+- **Quantization.** `python -m evals.filings_eval` scores retrieval on 20 hand-written 10-K questions (hit@5 = a chunk containing the answer is in the top 5):
 
-  | embedding model | BM25 | dense | hybrid | server peak RAM on Fly (before LanceDB) |
+  | embedding model | BM25 | dense | hybrid | server peak RAM on Fly |
   |---|---:|---:|---:|---:|
   | potion-base-8M | 0.65 | 0.35 | 0.60 | ~240MB |
+  | potion-retrieval-32M, float32 | 0.70 | 0.60 | 0.75 | ~400MB |
   | potion-retrieval-32M, float16 (production) | 0.70 | 0.60 | 0.75 | ~315MB |
 
-  The production row is measured on MongoDB Atlas; the potion-base-8M row dates from the earlier LanceDB index, whose BM25 scored 0.55 with the production model (Atlas's Lucene English analyzer scores 0.70).
-
-  With the small model, dense retrieval adds nothing measurable over keywords alone; the retrieval-tuned model is where hybrid search pays off. Loaded at full precision it would peak near 400MB (about 85MB more than needed) because model2vec reads the float32 weights before quantizing, so the Docker build saves a float16 copy instead, which scores the same in the eval and is what production runs.
+  The small model's dense search adds nothing over keywords, so the larger retrieval-tuned model is worth it — and quantizing it to float16 at build time keeps its scores while saving ~85MB.
 
 - **Plain `requests` rather than MCP or vendor SDKs.** Real-time market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: the result is more deterministic and what MCP is actually good at — letting a model discover and pick among tools — has nothing to add here. The REST APIs already do the job that an MCP server does, and one `requests.get` is lighter on a small instance than an extra dependency chain (see the full reasoning in `app/market_data.py`).
 
