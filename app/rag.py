@@ -432,7 +432,18 @@ def get_database() -> Database:
     if not settings.mongodb_uri:
         raise FilingUnavailable("10-K search isn't configured (MONGODB_URI is not set)")
     if _client is None:
-        _client = MongoClient(settings.mongodb_uri, serverSelectionTimeoutMS=5000)
+        # Fly suspends the VM when idle and resumes it with this client's
+        # pooled sockets still open but dead on Atlas's side; with no socket
+        # timeout, the next read on one blocked forever while holding
+        # _ingest_lock (and LangGraph's single worker). maxIdleTimeMS drops
+        # connections idle long enough to have crossed a suspend before
+        # reuse; socketTimeoutMS turns any other dead socket into an error.
+        _client = MongoClient(
+            settings.mongodb_uri,
+            serverSelectionTimeoutMS=5000,
+            maxIdleTimeMS=60_000,
+            socketTimeoutMS=30_000,
+        )
     return _client[settings.mongodb_db]
 
 

@@ -56,6 +56,26 @@ def test_list_annual_reports_returns_newest_original_10ks():
     assert mock_get.call_args.kwargs["headers"] == {"User-Agent": "Test Suite test@example.com"}
 
 
+def test_list_annual_reports_pages_back_past_recent_filings():
+    # Big banks' "recent" block is all prospectuses back to the latest 10-K;
+    # the one before it is only in an older page.
+    columns = ("form", "accessionNumber", "filingDate", "reportDate", "primaryDocument")
+    recent = dict(zip(columns, (["424B2", "10-K"], ["p1", "k26"], ["2026-03-01", "2026-02-13"],
+                                ["", "2025-12-31"], ["p1.htm", "k26.htm"])))
+    older = dict(zip(columns, (["424B2", "10-K", "10-K"], ["p2", "k25", "k24"],
+                               ["2025-03-01", "2025-02-14", "2024-02-16"],
+                               ["", "2024-12-31", "2023-12-31"], ["p2.htm", "k25.htm", "k24.htm"])))
+    submissions = {"filings": {"recent": recent, "files": [{"name": "CIK0001045810-submissions-001.json"}]}}
+    with patch(
+        "app.sec_filings.requests.get",
+        side_effect=[_json_response(_TICKERS), _json_response(submissions), _json_response(older)],
+    ) as mock_get:
+        refs = list_annual_reports("NVDA", limit=2)
+
+    assert [r.accession for r in refs] == ["k26", "k25"]
+    assert mock_get.call_args.args[0] == "https://data.sec.gov/submissions/CIK0001045810-submissions-001.json"
+
+
 def test_list_annual_reports_rejects_unknown_ticker():
     with patch("app.sec_filings.requests.get", return_value=_json_response(_TICKERS)):
         with pytest.raises(FilingUnavailable, match="ZZZZ"):

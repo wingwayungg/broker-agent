@@ -30,6 +30,7 @@ from app.config import settings
 
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+_SUBMISSIONS_PAGE_URL = "https://data.sec.gov/submissions/{name}"
 _ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
 
 # Item id -> human label used in citations. Order is the order they appear
@@ -109,31 +110,43 @@ def list_annual_reports(symbol: str, limit: int) -> list[FilingRef]:
     """The `limit` most recent 10-K filings for a ticker, newest first."""
     symbol = symbol.strip().upper()
     cik, company = _lookup_cik(symbol)
-    recent = _get(_SUBMISSIONS_URL.format(cik=cik)).json()["filings"]["recent"]
+    filings = _get(_SUBMISSIONS_URL.format(cik=cik)).json()["filings"]
+
+    def pages():
+        # "recent" holds the latest ~1000 filings, or a year of them, whichever
+        # is more; older ones are in paged files, newest first. Big banks file
+        # thousands of 424B2 prospectuses a year, so their previous 10-K is
+        # only in those pages.
+        yield filings["recent"]
+        for page in filings.get("files", []):
+            yield _get(_SUBMISSIONS_PAGE_URL.format(name=page["name"])).json()
 
     refs = []
-    for i, form in enumerate(recent["form"]):
-        # 10-K/A amendments are usually a cover page plus Part III and would
-        # shadow the real filing for that year, so only originals count.
-        if form != "10-K":
-            continue
-        accession = recent["accessionNumber"][i]
-        refs.append(
-            FilingRef(
-                symbol=symbol,
-                company=company,
-                cik=cik,
-                accession=accession,
-                form=form,
-                filing_date=recent["filingDate"][i],
-                report_date=recent["reportDate"][i],
-                url=_ARCHIVE_URL.format(
+    for page in pages():
+        for i, form in enumerate(page["form"]):
+            # 10-K/A amendments are usually a cover page plus Part III and would
+            # shadow the real filing for that year, so only originals count.
+            if form != "10-K":
+                continue
+            accession = page["accessionNumber"][i]
+            refs.append(
+                FilingRef(
+                    symbol=symbol,
+                    company=company,
                     cik=cik,
-                    accession=accession.replace("-", ""),
-                    document=recent["primaryDocument"][i],
-                ),
+                    accession=accession,
+                    form=form,
+                    filing_date=page["filingDate"][i],
+                    report_date=page["reportDate"][i],
+                    url=_ARCHIVE_URL.format(
+                        cik=cik,
+                        accession=accession.replace("-", ""),
+                        document=page["primaryDocument"][i],
+                    ),
+                )
             )
-        )
+            if len(refs) == limit:
+                break
         if len(refs) == limit:
             break
     if not refs:
