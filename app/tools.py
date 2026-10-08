@@ -17,12 +17,14 @@ until a real reply comes back from a human. That's what makes this
 human-in-the-loop rather than just an LLM being told to ask nicely.
 """
 import re
+from typing import Annotated
 
-from langchain_core.tools import tool
+from langchain_core.tools import InjectedToolCallId, tool
+from langgraph.prebuilt import InjectedState
 from langgraph.types import interrupt
 
 from app.broker_client import broker_client
-from app.rag import SectionName
+from app.rag import EXCERPTS_PER_SEARCH, SectionName
 from app.rag import search_filings as _search_filings
 from app.research import research_stock as _research_stock
 
@@ -117,10 +119,38 @@ def research_stock(symbol: str) -> str:
     return _research_stock(symbol)
 
 
+# The start of each excerpt's citation line in format_hits' output.
+_EXCERPT_NUMBER = re.compile(r"^\[(\d+)\] \S+ 10-K FY\d{4} · ", re.MULTILINE)
+
+
+def _first_excerpt_number(messages: list, tool_call_id: str) -> int:
+    """Where this search's excerpt numbering starts, so every number in a
+    thread names one excerpt. Numbering from [1] on every call meant a
+    year-over-year answer had two [1]s, and its Sources list couldn't say
+    which filing a claim came from. Parallel calls in one AI message run
+    against the same state without seeing each other's results, so each
+    takes its own block of EXCERPTS_PER_SEARCH numbers after the thread's
+    highest."""
+    used = [
+        int(n)
+        for m in messages
+        if m.type == "tool" and m.name == "search_filings" and isinstance(m.content, str)
+        for n in _EXCERPT_NUMBER.findall(m.content)
+    ]
+    start = max(used, default=0) + 1
+    last = messages[-1] if messages else None
+    siblings = [c["id"] for c in getattr(last, "tool_calls", None) or [] if c["name"] == "search_filings"]
+    if tool_call_id in siblings:
+        start += siblings.index(tool_call_id) * EXCERPTS_PER_SEARCH
+    return start
+
+
 @tool
 def search_filings(
     symbol: str,
     query: str,
+    messages: Annotated[list, InjectedState("messages")],
+    tool_call_id: Annotated[str, InjectedToolCallId],
     fiscal_year: int | None = None,
     section: SectionName | None = None,
 ) -> str:
@@ -134,7 +164,13 @@ def search_filings(
     year explicitly to search it. Optionally narrow by `section` (business,
     risk_factors, mdna, market_risk). The first search for a company takes
     several seconds while its filings are downloaded and indexed."""
-    return _search_filings(symbol, query, fiscal_year=fiscal_year, section=section)
+    return _search_filings(
+        symbol,
+        query,
+        fiscal_year=fiscal_year,
+        section=section,
+        first_number=_first_excerpt_number(messages, tool_call_id),
+    )
 
 
 @tool

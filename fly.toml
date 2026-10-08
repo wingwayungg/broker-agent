@@ -10,13 +10,7 @@ primary_region = "iad"
   auto_start_machines = true
   min_machines_running = 0
 
-# The 10-K index (app/rag.py) lives in MongoDB Atlas, not on this VM, whose
-# disk is wiped on restart. Its connection string is a per-app secret:
-#   fly secrets set MONGODB_URI='mongodb+srv://...' -a <app>
-
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  # 1GB was needed while LanceDB/pyarrow ran in-process; the index is now in
-  # MongoDB Atlas, so measure peak RAM before going back to 512MB.
   memory_mb = 1024

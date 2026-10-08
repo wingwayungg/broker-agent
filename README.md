@@ -2,6 +2,7 @@
 
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-1C3C3C?logo=langgraph&logoColor=white)](https://www.langchain.com/langgraph)
 [![LLM by Cerebras](https://img.shields.io/badge/LLM-Cerebras-F15A29)](https://www.cerebras.ai/)
+[![Search on MongoDB Atlas](https://img.shields.io/badge/Search-MongoDB%20Atlas-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/products/platform/atlas-vector-search)
 [![Deployed on Fly](https://img.shields.io/badge/Deployed%20on-Fly-8B5CF6?logo=flydotio&logoColor=white)](https://fly.io/)
 
 This is a simple chat website where you can ask questions about a stock portfolio in everyday English — for example "What am I holding right now?" or "Should I buy TSLA?" — and an AI assistant answers by looking up the account and today's market prices. The account behind it is a demo account holding three sample stocks (Apple, Nvidia and Microsoft), so no real money is involved, but the prices are live from [Yahoo Finance](https://finance.yahoo.com/) and the research is built from live web search via [Tavily](https://tavily.com/). This project serves as an exercise to practice building AI agents (powered by [LangGraph](https://www.langchain.com/langgraph) and [Cerebras](https://www.cerebras.ai/)) and connecting them to live data. The features of this project include:

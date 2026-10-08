@@ -14,7 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 ARG EMBEDDING_MODEL=minishlab/potion-retrieval-32M
 ARG EMBEDDING_DTYPE=float16
 # The Hub download cache (always float32) is deleted once the copy is saved.
-RUN python -c "from model2vec import StaticModel; StaticModel.from_pretrained('${EMBEDDING_MODEL}', quantize_to='${EMBEDDING_DTYPE}').save_pretrained('/models/${EMBEDDING_MODEL}')" \
+RUN python -c "from model2vec import StaticModel; \
+    StaticModel.from_pretrained( \
+    '${EMBEDDING_MODEL}', \
+    quantize_to='${EMBEDDING_DTYPE}' \
+    ).save_pretrained('/models/${EMBEDDING_MODEL}')" \
     && rm -rf /root/.cache/huggingface
 # The path ends in the model name, so app/rag.py's per-model `variant`
 # naming still applies.

@@ -76,6 +76,8 @@ RetrievalMode = Literal["hybrid", "bm25", "dense"]
 _RECHECK_SECONDS = 24 * 3600
 # Each ranker's candidate depth before fusion.
 _CANDIDATES = 30
+# Excerpts one search returns to the model.
+EXCERPTS_PER_SEARCH = 5
 # How long to wait for Atlas's search indexes: to become queryable when
 # first created, and to catch up after a filing is inserted.
 _INDEX_READY_SECONDS = 120
@@ -400,7 +402,7 @@ class FilingIndex:
         *,
         fiscal_year: int | None = None,
         section: SectionName | None = None,
-        k: int = 5,
+        k: int = EXCERPTS_PER_SEARCH,
         mode: RetrievalMode = "hybrid",
     ) -> list[Hit]:
         """Top-k chunks for `query` within one company's indexed filings,
@@ -463,10 +465,12 @@ def search_filings(
     *,
     fiscal_year: int | None = None,
     section: SectionName | None = None,
+    first_number: int = 1,
 ) -> str:
     """Ingest the company on first use, retrieve, and format numbered
-    excerpts for the model. Like app/market_data.py's fetchers, never raises:
-    failures come back as a bracketed explanation the model can relay."""
+    excerpts for the model, starting at `first_number`. Like
+    app/market_data.py's fetchers, never raises: failures come back as a
+    bracketed explanation the model can relay."""
     symbol = symbol.strip().upper()
     try:
         index = get_filing_index()
@@ -489,10 +493,10 @@ def search_filings(
         return f"[filings unavailable: {exc}]"
     except PyMongoError:
         return "[filings unavailable: the filings database is unreachable]"
-    return format_hits(symbol, hits, years)
+    return format_hits(symbol, hits, years, start=first_number)
 
 
-def format_hits(symbol: str, hits: list[Hit], years: list[int]) -> str:
+def format_hits(symbol: str, hits: list[Hit], years: list[int], start: int = 1) -> str:
     """Numbered excerpts as the model sees them. Shared with evals/ so the
     eval grades answers generated from exactly what the agent would get."""
     if not hits:
@@ -503,6 +507,6 @@ def format_hits(symbol: str, hits: list[Hit], years: list[int]) -> str:
         f"Cite them by number."
     )
     blocks = [
-        f"[{n}] {hit.citation} · {hit.url}\n{hit.text}" for n, hit in enumerate(hits, start=1)
+        f"[{n}] {hit.citation} · {hit.url}\n{hit.text}" for n, hit in enumerate(hits, start=start)
     ]
     return header + "\n\n" + "\n\n".join(blocks)

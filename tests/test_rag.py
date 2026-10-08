@@ -6,6 +6,8 @@ against a stub index, so nothing touches the network or loads weights.
 """
 from unittest.mock import patch
 
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
@@ -106,8 +108,45 @@ def stub_index():
         yield index
 
 
+def _search(args: dict, messages: list | None = None, call_id: str = "c1") -> str:
+    """Invoke the tool the way ToolNode does: as a tool call, with the
+    thread's messages injected."""
+    call = {"type": "tool_call", "name": "search_filings", "id": call_id, "args": args}
+    if messages is None:
+        messages = [HumanMessage("q"), AIMessage("", tool_calls=[call])]
+    return search_filings.invoke({**call, "args": {**args, "messages": messages}}).content
+
+
+def test_search_filings_numbers_continue_after_earlier_searches(stub_index):
+    first = _search({"symbol": "NVDA", "query": "risks"})
+    assert "\n[1] NVDA 10-K FY2026" in first
+
+    second_call = {"name": "search_filings", "id": "c2", "args": {"symbol": "NVDA", "query": "risks", "fiscal_year": 2025}}
+    thread = [
+        HumanMessage("q"),
+        AIMessage("", tool_calls=[{"name": "search_filings", "id": "c1", "args": {}}]),
+        ToolMessage(first, tool_call_id="c1", name="search_filings"),
+        AIMessage("", tool_calls=[second_call]),
+    ]
+    second = _search(second_call["args"], thread, call_id="c2")
+    # One hit came back before, so this search starts at [2], not [1] again.
+    assert "\n[2] NVDA 10-K FY2025" in second
+    assert "\n[1] " not in second
+
+
+def test_parallel_search_filings_calls_get_separate_number_blocks(stub_index):
+    calls = [
+        {"name": "search_filings", "id": "a", "args": {"symbol": "NVDA", "query": "risks"}},
+        {"name": "search_filings", "id": "b", "args": {"symbol": "NVDA", "query": "risks", "fiscal_year": 2025}},
+    ]
+    thread = [HumanMessage("q"), AIMessage("", tool_calls=calls)]
+
+    assert "\n[1] NVDA 10-K FY2026" in _search(calls[0]["args"], thread, call_id="a")
+    assert f"\n[{1 + rag.EXCERPTS_PER_SEARCH}] NVDA 10-K FY2025" in _search(calls[1]["args"], thread, call_id="b")
+
+
 def test_search_filings_tool_returns_numbered_cited_excerpts(stub_index):
-    result = search_filings.invoke({"symbol": "nvda", "query": "export controls China"})
+    result = _search({"symbol": "nvda", "query": "export controls China"})
 
     assert result.startswith("Excerpts from NVIDIA CORP (NVDA) 10-K filings")
     assert "indexed fiscal years: 2026, 2025" in result
@@ -115,28 +154,28 @@ def test_search_filings_tool_returns_numbered_cited_excerpts(stub_index):
 
 
 def test_search_filings_tool_defaults_to_the_latest_fiscal_year(stub_index):
-    search_filings.invoke({"symbol": "NVDA", "query": "TSMC Taiwan wafers"})
+    _search({"symbol": "NVDA", "query": "TSMC Taiwan wafers"})
     assert stub_index.retrieved == [("NVDA", "TSMC Taiwan wafers", 2026, None)]
 
 
 def test_search_filings_tool_reports_unindexed_year(stub_index):
-    result = search_filings.invoke({"symbol": "NVDA", "query": "risks", "fiscal_year": 2019})
+    result = _search({"symbol": "NVDA", "query": "risks", "fiscal_year": 2019})
     assert result == "[no FY2019 10-K indexed for NVDA; indexed fiscal years: 2026, 2025]"
 
 
 def test_search_filings_tool_reports_edgar_failure(stub_index):
     with patch.object(stub_index, "ensure_indexed", side_effect=FilingUnavailable("ZZZZ isn't in SEC EDGAR")):
-        result = search_filings.invoke({"symbol": "ZZZZ", "query": "risks"})
+        result = _search({"symbol": "ZZZZ", "query": "risks"})
     assert result == "[filings unavailable: ZZZZ isn't in SEC EDGAR]"
 
 
 def test_search_filings_tool_reports_unreachable_database(stub_index):
     with patch.object(stub_index, "ensure_indexed", side_effect=ServerSelectionTimeoutError("timed out")):
-        result = search_filings.invoke({"symbol": "NVDA", "query": "risks"})
+        result = _search({"symbol": "NVDA", "query": "risks"})
     assert result == "[filings unavailable: the filings database is unreachable]"
 
 
 def test_search_filings_tool_reports_missing_configuration():
     with patch.object(rag, "_index", None), patch.object(rag.settings, "mongodb_uri", ""):
-        result = search_filings.invoke({"symbol": "NVDA", "query": "risks"})
+        result = _search({"symbol": "NVDA", "query": "risks"})
     assert result == "[filings unavailable: 10-K search isn't configured (MONGODB_URI is not set)]"

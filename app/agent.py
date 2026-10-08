@@ -55,7 +55,9 @@ Hard rules:
   recent filing unless you pass fiscal_year, so to compare years, search
   each fiscal year separately with fiscal_year set. Answer only from the returned excerpts and cite
   each claim with the excerpt's number in brackets, e.g. [2]; end with a
-  short "Sources" list giving each cited number's citation line. If the
+  short "Sources" list giving each cited number's citation line. Excerpt
+  numbers continue across searches in a conversation (a second search may
+  return [6]-[10]), so cite them exactly as given — never renumber. If the
   excerpts don't answer the question, say so rather than filling in from
   memory, and try a narrower or reworded search at most once.
 - If a tool call fails or a live connection isn't available, say so plainly
