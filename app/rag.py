@@ -36,6 +36,12 @@ Design choices:
   second), so after ingesting a company's filings ensure_indexed waits until both
   indexes see its chunks; otherwise the first question about a new company
   would search an index that doesn't have it yet.
+- Ingest runs inside the request rather than being deferred to a queue
+  (e.g. Redis plus a worker): the insert and the index catch-up take about
+  a second together, and retrieve() can't answer until they're done, since
+  the ranking runs in Atlas. A lost ingest needs no durable queue either,
+  because ensure_indexed skips stored filings and the next question redoes
+  the rest.
 - Embeddings are model2vec static embeddings (potion-retrieval-32M, ~65MB
   at float16, numpy only), computed locally. Hosted embedding APIs were the
   alternative, but free tiers cap throughput (Gemini's: 30k tokens/minute),
