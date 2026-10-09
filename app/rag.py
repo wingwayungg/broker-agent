@@ -33,7 +33,7 @@ Design choices:
   compared. The vector index's dimension is fixed, so switching to a model
   of another size means dropping the `chunks_vector` index first.
 - Atlas Search indexes catch up with writes asynchronously (about a
-  second), so after ingesting a filing _index_filing waits until both
+  second), so after ingesting a company's filings ensure_indexed waits until both
   indexes see its chunks; otherwise the first question about a new company
   would search an index that doesn't have it yet.
 - Embeddings are model2vec static embeddings (potion-retrieval-32M, ~65MB
@@ -46,6 +46,7 @@ Design choices:
   controls") that keyword search nails. evals/ measures each mode
   separately so that trade-off is a number, not a claim.
 """
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import time
 from threading import Lock
@@ -291,11 +292,20 @@ class FilingIndex:
                 refs = list_annual_reports(symbol, self.filings_per_company)
             except FilingUnavailable as exc:
                 refs, error = [], exc
-            for ref in refs:
-                try:
-                    self._index_filing(ref)
-                except FilingUnavailable as exc:
-                    error = error or exc
+            # EDGAR download + parsing dominates a cold ticker and is network
+            # bound, so the filings are fetched concurrently; embedding and
+            # inserting stay sequential, and the Atlas catch-up wait happens
+            # once after all inserts instead of once per filing.
+            with ThreadPoolExecutor(max_workers=max(len(refs), 1)) as pool:
+                fetched = list(pool.map(self._fetch_filing, refs))
+            pending = []
+            for ref, result in zip(refs, fetched):
+                if isinstance(result, FilingUnavailable):
+                    error = error or result
+                elif result is not None:
+                    pending.append(self._index_filing(ref, result))
+            for accession, expected, probe in pending:
+                self._wait_until_searchable(accession, expected, probe)
 
             if refs:
                 # Recorded even if a filing failed to parse: that failure is
@@ -308,19 +318,29 @@ class FilingIndex:
             if error and not self.indexed_years(symbol):
                 raise error
 
-    def _index_filing(self, ref: FilingRef) -> None:
+    def _fetch_filing(self, ref: FilingRef) -> list[tuple[str, str, str]] | FilingUnavailable | None:
+        """Download and chunk one filing as (item, title, text) rows; None if
+        it's already indexed. Runs in a worker thread, so a failure is
+        returned rather than raised."""
         if self._chunks.count_documents({"variant": self.variant, "accession": ref.accession}, limit=1):
-            return
-
-        rows = []
-        for section in fetch_sections(ref):
-            for text in chunk_text(section.text, self.chunk_words, self.overlap_words):
-                rows.append((section.item, section.title, text))
+            return None
+        try:
+            rows = []
+            for section in fetch_sections(ref):
+                for text in chunk_text(section.text, self.chunk_words, self.overlap_words):
+                    rows.append((section.item, section.title, text))
+        except FilingUnavailable as exc:
+            return exc
         if not rows:
-            raise FilingUnavailable(
+            return FilingUnavailable(
                 f"Couldn't find Items 1/1A/7/7A in {ref.symbol}'s FY{ref.fiscal_year} 10-K"
             )
+        return rows
 
+    def _index_filing(
+        self, ref: FilingRef, rows: list[tuple[str, str, str]]
+    ) -> tuple[str, int, np.ndarray]:
+        """Embed and insert a filing's rows; returns what _wait_until_searchable needs."""
         # The header is embedded with the chunk but not stored in it: it
         # tells the vector which company/year/section a fragment like "our
         # supply constraints worsened" belongs to, while the stored text
@@ -349,7 +369,7 @@ class FilingIndex:
                 for (item, title, text), vector in zip(rows, vectors)
             ]
         )
-        self._wait_until_searchable(ref.accession, len(rows), vectors[0])
+        return ref.accession, len(rows), vectors[0]
 
     def _wait_until_searchable(self, accession: str, expected: int, probe: np.ndarray) -> None:
         """Block until both search indexes return all of a filing's chunks,
