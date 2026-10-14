@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 source venv/bin/activate               # project venv (see .vscode/settings.json)
-pip install -r requirements.txt
+pip install -r requirements-dev.txt    # exact lock; requirements.txt is the runtime-only lock Fly installs
+# Edit ranges in requirements.in / requirements-dev.in (never the .txt locks), then regenerate:
+uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt [--upgrade]
+uv pip compile requirements-dev.in --universal --python-version 3.14 -o requirements-dev.txt [--upgrade]
 
 python -m pytest                       # full suite, offline (~1s); Atlas tests skip without MONGODB_TEST_URI
 docker run -d -p 27017:27017 mongodb/mongodb-atlas-local   # then:

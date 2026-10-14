@@ -134,7 +134,7 @@ pip install -r requirements-dev.txt    # or requirements.txt if you don't need t
 # plus MONGODB_URI for 10-K search: a free Atlas M0 cluster in AWS us-east-1 (near Fly's iad), a database user,
 # and Network Access 0.0.0.0/0 (Fly machines have no static IP); set the same URI on Fly with `fly secrets set MONGODB_URI=...`
 # and a 32-character LANGGRAPH_AES_KEY to encrypt saved chats (`fly secrets set LANGGRAPH_AES_KEY=...`; keep a copy, a lost key makes encrypted threads unreadable)
-# to use Groq instead, uncomment langchain-groq in requirements.txt, reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
+# to use Groq instead, uncomment langchain-groq in requirements.in, recompile the locks (see CLAUDE.md), reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
 
 langgraph dev                 # browser chat at http://localhost:2024/
 python -m local_api_cli.cli   # or chat in the terminal
