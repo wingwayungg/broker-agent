@@ -11,9 +11,10 @@ points at one — locally, the Atlas Local container:
 Each test gets its own database, dropped afterwards. EDGAR is still faked
 (tests/conftest.py).
 """
+
 import os
-from unittest.mock import patch
 import uuid
+from unittest.mock import patch
 
 import pytest
 from pymongo import MongoClient
@@ -51,8 +52,9 @@ def test_ensure_indexed_ingests_once_then_serves_from_the_db(index, fake_edgar):
 
 def test_ensure_indexed_keeps_serving_old_index_when_edgar_is_down(index, fake_edgar):
     index.ensure_indexed("NVDA")
-    with patch("app.rag.time.time", return_value=1e12), patch(
-        "app.rag.list_annual_reports", side_effect=FilingUnavailable("EDGAR down")
+    with (
+        patch("app.rag.time.time", return_value=1e12),
+        patch("app.rag.list_annual_reports", side_effect=FilingUnavailable("EDGAR down")),
     ):
         index.ensure_indexed("NVDA")  # must not raise
     assert index.indexed_years("NVDA") == [2026, 2025]

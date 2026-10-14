@@ -36,8 +36,9 @@ fixed query, never model-chosen, so that abstraction has nothing to add.
 to `/search`; for one hardcoded call with a fixed payload it's an extra
 dependency without an extra capability.
 """
-from threading import Lock
+
 import time
+from threading import Lock
 
 import requests
 
@@ -136,9 +137,7 @@ def fetch_price_snapshot(symbol: str) -> str:
     # close in the series.
     prev_close = closes[-2] if len(closes) >= 2 else None
 
-    lines = [
-        f"Current price: ${price:.2f}" if price is not None else "Current price: unavailable"
-    ]
+    lines = [f"Current price: ${price:.2f}" if price is not None else "Current price: unavailable"]
     if price is not None and prev_close:
         lines.append(f"Change vs previous close: {(price - prev_close) / prev_close * 100:+.2f}%")
     if meta.get("regularMarketDayLow") and meta.get("regularMarketDayHigh"):

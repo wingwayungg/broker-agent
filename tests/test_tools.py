@@ -4,12 +4,13 @@ once you wire up the real client, as long as get_positions() etc. still
 return the Pydantic models defined in app/models.py — that's the whole
 point of the contract.
 """
+
 from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, MessagesState
+from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
 
@@ -17,12 +18,12 @@ from app.tools import (
     ALL_TOOLS,
     buy_stock,
     compact_earlier_tool_results,
-    normalize_citations,
     get_account_summary,
     get_bracket_order_status,
     get_open_orders,
     get_positions,
     get_recent_fills,
+    normalize_citations,
     research_stock,
 )
 
@@ -65,29 +66,23 @@ def test_get_bracket_order_status_returns_symbol():
     assert "parent" in result.lower()
 
 
-class _FakeResponse:
-    def __init__(self, content: str):
-        self.content = content
-
-
 class _FakeLLM:
     def invoke(self, messages):
         # Sub-agent calls carry the ticker in the human message; the final
         # synthesis call carries "Analyst notes" instead.
         last = messages[-1].content
         if "Analyst notes" in last:
-            return _FakeResponse("Para 1.\n\nPara 2.\n\nPara 3.")
-        return _FakeResponse("mock analyst note")
+            return AIMessage("Para 1.\n\nPara 2.\n\nPara 3.")
+        return AIMessage("mock analyst note")
 
 
 def test_research_stock_returns_three_paragraph_summary():
-    with patch("app.research.get_llm", return_value=_FakeLLM()), patch(
-        "app.research.fetch_company_name", return_value="Apple Inc."
-    ), patch(
-        "app.research.fetch_price_snapshot", return_value="mock price snapshot"
-    ), patch(
-        "app.research.fetch_web_context", return_value="mock web context"
-    ) as mock_web:
+    with (
+        patch("app.research.get_llm", return_value=_FakeLLM()),
+        patch("app.research.fetch_company_name", return_value="Apple Inc."),
+        patch("app.research.fetch_price_snapshot", return_value="mock price snapshot"),
+        patch("app.research.fetch_web_context", return_value="mock web context") as mock_web,
+    ):
         result = research_stock.invoke({"symbol": "aapl"})
     paragraphs = [p for p in result.split("\n\n") if p.strip()]
     assert len(paragraphs) == 3
@@ -124,7 +119,11 @@ def _buy_call(symbol: str, quantity: float) -> dict:
             AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "buy_stock", "args": {"symbol": symbol, "quantity": quantity}, "id": "call1"}
+                    {
+                        "name": "buy_stock",
+                        "args": {"symbol": symbol, "quantity": quantity},
+                        "id": "call1",
+                    }
                 ],
             )
         ]

@@ -7,9 +7,9 @@ This is a local alternative to `langgraph dev` (which is what Fly runs),
 so fastapi/uvicorn live in requirements-dev.txt, not requirements.txt.
 Run with `uvicorn local_api_cli.api:app --reload` from the repo root.
 """
-from pydantic import BaseModel
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 from local_api_cli.session import ask
 
@@ -29,6 +29,7 @@ class Answer(BaseModel):
 def ask_endpoint(payload: Question) -> Answer:
     answer = ask(payload.question, thread_id=payload.thread_id)
     return Answer(answer=answer)
+
 
 @app.get("/health")
 async def health() -> dict:

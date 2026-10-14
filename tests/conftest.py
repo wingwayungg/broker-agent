@@ -2,6 +2,7 @@
 Fixtures shared by tests/test_rag.py (offline) and tests/test_rag_atlas.py
 (against a real Atlas Search deployment): a fake embedder and a fake EDGAR.
 """
+
 import zlib
 from unittest.mock import patch
 
@@ -50,9 +51,12 @@ FAKE_SECTIONS = {
 
 @pytest.fixture
 def fake_edgar():
-    with patch(
-        "app.rag.list_annual_reports", return_value=[filing_ref(2026), filing_ref(2025)]
-    ) as mock_list, patch(
-        "app.rag.fetch_sections", side_effect=lambda ref: FAKE_SECTIONS[ref.accession]
-    ) as mock_fetch:
+    with (
+        patch(
+            "app.rag.list_annual_reports", return_value=[filing_ref(2026), filing_ref(2025)]
+        ) as mock_list,
+        patch(
+            "app.rag.fetch_sections", side_effect=lambda ref: FAKE_SECTIONS[ref.accession]
+        ) as mock_fetch,
+    ):
         yield mock_list, mock_fetch

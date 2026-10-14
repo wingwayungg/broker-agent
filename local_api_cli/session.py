@@ -4,6 +4,7 @@ api.py. Lives here rather than in app/agent.py because nothing that ships
 uses it: the browser UI posts straight to the LangGraph API and makes the
 same resume-vs-new-message decision itself in app/static/app.js.
 """
+
 from langgraph.types import Command
 
 from app.agent import agent

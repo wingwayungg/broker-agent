@@ -20,3 +20,8 @@ README.md
 .idea/
 .DS_Store
 fly.toml
+pyproject.toml
+requirements.in
+requirements-dev.in
+requirements-dev.txt
+CLAUDE.md

@@ -12,6 +12,7 @@ in one broad prompt.
 This is informational only — sub-agents are instructed not to issue buy/sell
 recommendations, consistent with the account agent's no-advice rule.
 """
+
 from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -99,9 +100,7 @@ def research_stock(symbol: str) -> str:
     combined = get_llm().invoke(
         [
             SystemMessage(content=_SYNTHESIS_PROMPT),
-            HumanMessage(
-                content=f"Ticker: {symbol}\n\nAnalyst notes:\n\n" + "\n\n".join(notes)
-            ),
+            HumanMessage(content=f"Ticker: {symbol}\n\nAnalyst notes:\n\n" + "\n\n".join(notes)),
         ]
     )
-    return combined.content
+    return combined.text

@@ -15,6 +15,7 @@ field which one to send next, instead of guessing at plain text the way
 ask() does. On load the page rebuilds its log from the thread's state (and
 re-joins a still-running run), so a reload mid-reply doesn't blank it.
 """
+
 import hashlib
 from pathlib import Path
 from urllib.parse import quote

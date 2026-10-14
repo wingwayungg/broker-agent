@@ -2,10 +2,12 @@
 Central config. Keeping provider selection here means swapping Cerebras for
 Groq or Gemini (or anything else) later is a one-line change, not a refactor.
 """
+
 import os
 from functools import cache
 
 from dotenv import load_dotenv
+from pydantic import SecretStr
 
 load_dotenv()
 
@@ -50,7 +52,7 @@ def get_llm():
     times per research_stock) only burns time and connection setup.
     """
     if settings.llm_provider == "groq":
-        from langchain_groq import ChatGroq
+        from langchain_groq import ChatGroq  # pyright: ignore[reportMissingImports]
 
         return ChatGroq(
             api_key=settings.groq_api_key,
@@ -58,7 +60,7 @@ def get_llm():
             temperature=0,
         )
     elif settings.llm_provider == "gemini":
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_google_genai import ChatGoogleGenerativeAI  # pyright: ignore[reportMissingImports]
 
         return ChatGoogleGenerativeAI(
             google_api_key=settings.gemini_api_key,
@@ -71,7 +73,7 @@ def get_llm():
         from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(
-            api_key=settings.cerebras_api_key,
+            api_key=SecretStr(settings.cerebras_api_key),
             base_url="https://api.cerebras.ai/v1",
             model=os.getenv("CEREBRAS_MODEL", "gpt-oss-120b"),
             temperature=0,

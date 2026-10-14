@@ -3,6 +3,7 @@ Tests for app/broker_client.py's live-price fallback logic — kept separate
 from tests/test_tools.py (which mocks fetch_current_price away entirely)
 so these can exercise the fallback behavior directly.
 """
+
 from unittest.mock import patch
 
 from app.broker_client import _MOCK_QUOTES, _live_or_fallback_price, broker_client

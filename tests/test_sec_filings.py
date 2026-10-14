@@ -3,6 +3,7 @@ Tests for app/sec_filings.py — EDGAR lookups and 10-K HTML -> sections.
 requests.get is mocked so these run offline; the HTML fixtures are small
 hand-written imitations of the inline-XBRL quirks real filings have.
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,10 +31,38 @@ _SUBMISSIONS = {
     "filings": {
         "recent": {
             "form": ["10-Q", "10-K/A", "10-K", "10-Q", "10-K", "10-K"],
-            "accessionNumber": ["q1", "amend", "0001-26-000021", "q2", "0001-25-000023", "0001-24-000029"],
-            "filingDate": ["2026-05-20", "2026-04-01", "2026-02-25", "2025-11-19", "2025-02-26", "2024-02-21"],
-            "reportDate": ["2026-04-26", "2026-01-25", "2026-01-25", "2025-10-26", "2025-01-26", "2024-01-28"],
-            "primaryDocument": ["q1.htm", "a.htm", "nvda-20260125.htm", "q2.htm", "nvda-20250126.htm", "nvda-20240128.htm"],
+            "accessionNumber": [
+                "q1",
+                "amend",
+                "0001-26-000021",
+                "q2",
+                "0001-25-000023",
+                "0001-24-000029",
+            ],
+            "filingDate": [
+                "2026-05-20",
+                "2026-04-01",
+                "2026-02-25",
+                "2025-11-19",
+                "2025-02-26",
+                "2024-02-21",
+            ],
+            "reportDate": [
+                "2026-04-26",
+                "2026-01-25",
+                "2026-01-25",
+                "2025-10-26",
+                "2025-01-26",
+                "2024-01-28",
+            ],
+            "primaryDocument": [
+                "q1.htm",
+                "a.htm",
+                "nvda-20260125.htm",
+                "q2.htm",
+                "nvda-20250126.htm",
+                "nvda-20240128.htm",
+            ],
         }
     }
 }
@@ -60,12 +89,35 @@ def test_list_annual_reports_pages_back_past_recent_filings():
     # Big banks' "recent" block is all prospectuses back to the latest 10-K;
     # the one before it is only in an older page.
     columns = ("form", "accessionNumber", "filingDate", "reportDate", "primaryDocument")
-    recent = dict(zip(columns, (["424B2", "10-K"], ["p1", "k26"], ["2026-03-01", "2026-02-13"],
-                                ["", "2025-12-31"], ["p1.htm", "k26.htm"])))
-    older = dict(zip(columns, (["424B2", "10-K", "10-K"], ["p2", "k25", "k24"],
-                               ["2025-03-01", "2025-02-14", "2024-02-16"],
-                               ["", "2024-12-31", "2023-12-31"], ["p2.htm", "k25.htm", "k24.htm"])))
-    submissions = {"filings": {"recent": recent, "files": [{"name": "CIK0001045810-submissions-001.json"}]}}
+    recent = dict(
+        zip(
+            columns,
+            (
+                ["424B2", "10-K"],
+                ["p1", "k26"],
+                ["2026-03-01", "2026-02-13"],
+                ["", "2025-12-31"],
+                ["p1.htm", "k26.htm"],
+            ),
+            strict=True,
+        )
+    )
+    older = dict(
+        zip(
+            columns,
+            (
+                ["424B2", "10-K", "10-K"],
+                ["p2", "k25", "k24"],
+                ["2025-03-01", "2025-02-14", "2024-02-16"],
+                ["", "2024-12-31", "2023-12-31"],
+                ["p2.htm", "k25.htm", "k24.htm"],
+            ),
+            strict=True,
+        )
+    )
+    submissions = {
+        "filings": {"recent": recent, "files": [{"name": "CIK0001045810-submissions-001.json"}]}
+    }
     with patch(
         "app.sec_filings.requests.get",
         side_effect=[_json_response(_TICKERS), _json_response(submissions), _json_response(older)],
@@ -73,7 +125,10 @@ def test_list_annual_reports_pages_back_past_recent_filings():
         refs = list_annual_reports("NVDA", limit=2)
 
     assert [r.accession for r in refs] == ["k26", "k25"]
-    assert mock_get.call_args.args[0] == "https://data.sec.gov/submissions/CIK0001045810-submissions-001.json"
+    assert (
+        mock_get.call_args.args[0]
+        == "https://data.sec.gov/submissions/CIK0001045810-submissions-001.json"
+    )
 
 
 def test_list_annual_reports_rejects_unknown_ticker():
@@ -83,9 +138,10 @@ def test_list_annual_reports_rejects_unknown_ticker():
 
 
 def test_requests_refused_without_user_agent():
-    with patch("app.sec_filings.settings.sec_user_agent", ""), patch(
-        "app.sec_filings.requests.get"
-    ) as mock_get:
+    with (
+        patch("app.sec_filings.settings.sec_user_agent", ""),
+        patch("app.sec_filings.requests.get") as mock_get,
+    ):
         with pytest.raises(FilingUnavailable, match="SEC_USER_AGENT"):
             list_annual_reports("NVDA", limit=2)
     mock_get.assert_not_called()
@@ -118,7 +174,10 @@ def test_split_sections_skips_table_of_contents_and_running_headers():
     text = "\n".join(
         [
             # Table of contents: every heading, each followed immediately by the next.
-            "Item 1. Business", "Item 1A. Risk Factors", "Item 7. MD&A", "Item 8. Financials",
+            "Item 1. Business",
+            "Item 1A. Risk Factors",
+            "Item 7. MD&A",
+            "Item 8. Financials",
             "Item 1. Business",
             "We make GPUs.",
             "Item 1",  # running page header, same item: not a new section

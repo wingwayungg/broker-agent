@@ -8,3 +8,5 @@ ipykernel~=7.4
 # Capped below 0.143: that release needs opentelemetry-api>=1.44, but langgraph-api pins 1.42.1
 fastapi~=0.141.1
 uvicorn[standard]~=0.54
+ruff~=0.17
+pyright~=1.1.414

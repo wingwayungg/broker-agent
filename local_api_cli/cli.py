@@ -6,11 +6,14 @@ Run with `python -m local_api_cli.cli` from the repo root (not `python
 local_api_cli/cli.py`, which would put local_api_cli/ on sys.path instead of
 the root and break `import app`).
 """
+
 from local_api_cli.session import ask
 
 
 def main():
-    print("Broker Portfolio Agent. Buy orders require two 'yes' confirmations. Type 'exit' to quit.\n")
+    print(
+        "Broker Portfolio Agent. Buy orders require two 'yes' confirmations. Type 'exit' to quit.\n"
+    )
     thread_id = "cli-session"
     while True:
         question = input("> ").strip()

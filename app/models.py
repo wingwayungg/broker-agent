@@ -5,6 +5,7 @@ broker integration, match these shapes and nothing downstream needs to change.
 They also double as FastAPI response models if you expose raw endpoints
 later, so this isn't throwaway typing work.
 """
+
 from pydantic import BaseModel
 
 

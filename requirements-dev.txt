@@ -400,6 +400,8 @@ nbformat==5.11.1
     #   nbconvert
 nest-asyncio2==1.7.4
     # via ipykernel
+nodeenv==1.11.0
+    # via pyright
 notebook-shim==0.2.4
     # via jupyterlab
 numpy==2.5.4
@@ -556,6 +558,8 @@ pymongo-search-utils==0.3.1
     # via
     #   -c requirements.txt
     #   langchain-mongodb
+pyright==1.1.414
+    # via -r requirements-dev.in
 pytest==9.1.1
     # via -r requirements-dev.in
 python-dateutil==2.9.0.post0
@@ -627,6 +631,8 @@ rpds-py==2026.9.1
     # via
     #   jsonschema
     #   referencing
+ruff==0.17.1
+    # via -r requirements-dev.in
 safetensors==0.8.0
     # via
     #   -c requirements.txt
@@ -742,6 +748,7 @@ typing-extensions==4.16.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pyright
     #   sqlalchemy
     #   typing-inspection
 typing-inspection==0.4.4

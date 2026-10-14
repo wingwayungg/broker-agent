@@ -3,6 +3,7 @@ Tests for app/market_data.py — the live-data fetchers research_stock relies
 on instead of the LLM's training memory. requests.get/post are mocked so
 these run offline and don't depend on Yahoo/Tavily being reachable.
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -100,7 +101,9 @@ def test_fetch_company_name_prefers_long_name():
 
 
 def test_fetch_company_name_falls_back_to_short_name():
-    with patch("app.market_data.requests.get", return_value=_yahoo_response({"shortName": "Everpure"}, [])):
+    with patch(
+        "app.market_data.requests.get", return_value=_yahoo_response({"shortName": "Everpure"}, [])
+    ):
         assert fetch_company_name("P") == "Everpure"
 
 
@@ -127,8 +130,12 @@ def test_chart_data_is_fetched_once_per_symbol_within_ttl():
 
 
 def test_chart_data_is_refetched_after_ttl_expires():
-    with patch("app.market_data.requests.get") as mock_get, patch(
-        "app.market_data.time.monotonic", side_effect=[0.0, 0.0 + market_data._CHART_CACHE_TTL_SECONDS]
+    with (
+        patch("app.market_data.requests.get") as mock_get,
+        patch(
+            "app.market_data.time.monotonic",
+            side_effect=[0.0, 0.0 + market_data._CHART_CACHE_TTL_SECONDS],
+        ),
     ):
         mock_get.side_effect = [
             _yahoo_response({"regularMarketPrice": 100.0}, []),
@@ -149,9 +156,12 @@ def test_chart_data_failures_are_not_cached():
 
 
 def test_chart_cache_evicts_oldest_entry_when_full():
-    with patch.object(market_data, "_CHART_CACHE_MAX_ENTRIES", 2), patch(
-        "app.market_data.requests.get",
-        return_value=_yahoo_response({"regularMarketPrice": 1.0}, []),
+    with (
+        patch.object(market_data, "_CHART_CACHE_MAX_ENTRIES", 2),
+        patch(
+            "app.market_data.requests.get",
+            return_value=_yahoo_response({"regularMarketPrice": 1.0}, []),
+        ),
     ):
         for symbol in ["AAPL", "MSFT", "NVDA"]:
             fetch_current_price(symbol)
@@ -166,9 +176,10 @@ def _tavily_response(results: list) -> MagicMock:
 
 
 def test_fetch_web_context_returns_message_when_no_api_key_configured():
-    with patch("app.market_data.settings.tavily_api_key", ""), patch(
-        "app.market_data.requests.post"
-    ) as mock_post:
+    with (
+        patch("app.market_data.settings.tavily_api_key", ""),
+        patch("app.market_data.requests.post") as mock_post,
+    ):
         result = fetch_web_context("AAPL", "recent news")
 
     assert result == "[web search unavailable: no TAVILY_API_KEY configured]"
@@ -182,9 +193,10 @@ def test_fetch_web_context_happy_path_formats_and_truncates_results():
         {"title": "Apple news", "url": "https://example.com/b", "content": "short update"},
     ]
 
-    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
-        "app.market_data.requests.post", return_value=_tavily_response(results)
-    ) as mock_post:
+    with (
+        patch("app.market_data.settings.tavily_api_key", "fake-key"),
+        patch("app.market_data.requests.post", return_value=_tavily_response(results)) as mock_post,
+    ):
         result = fetch_web_context("AAPL", "latest quarterly earnings")
 
     assert "- Apple Q3 earnings (https://example.com/a):" in result
@@ -203,9 +215,10 @@ def test_fetch_web_context_happy_path_formats_and_truncates_results():
 def test_fetch_web_context_anchors_query_on_company_name():
     # A bare one-letter ticker like "P" is useless as a search term; the
     # company name must be in the query so results are about the right stock.
-    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
-        "app.market_data.requests.post", return_value=_tavily_response([])
-    ) as mock_post:
+    with (
+        patch("app.market_data.settings.tavily_api_key", "fake-key"),
+        patch("app.market_data.requests.post", return_value=_tavily_response([])) as mock_post,
+    ):
         fetch_web_context("P", "recent news and catalysts", company_name="Everpure, Inc.")
 
     query = mock_post.call_args.kwargs["json"]["query"]
@@ -213,9 +226,10 @@ def test_fetch_web_context_anchors_query_on_company_name():
 
 
 def test_fetch_web_context_without_window_searches_general_index():
-    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
-        "app.market_data.requests.post", return_value=_tavily_response([])
-    ) as mock_post:
+    with (
+        patch("app.market_data.settings.tavily_api_key", "fake-key"),
+        patch("app.market_data.requests.post", return_value=_tavily_response([])) as mock_post,
+    ):
         fetch_web_context("AAPL", "latest quarterly earnings", recent_days=None)
 
     payload = mock_post.call_args.kwargs["json"]
@@ -224,8 +238,9 @@ def test_fetch_web_context_without_window_searches_general_index():
 
 
 def test_fetch_web_context_returns_message_when_no_results():
-    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
-        "app.market_data.requests.post", return_value=_tavily_response([])
+    with (
+        patch("app.market_data.settings.tavily_api_key", "fake-key"),
+        patch("app.market_data.requests.post", return_value=_tavily_response([])),
     ):
         result = fetch_web_context("AAPL", "recent news")
 
@@ -233,8 +248,9 @@ def test_fetch_web_context_returns_message_when_no_results():
 
 
 def test_fetch_web_context_handles_request_failure():
-    with patch("app.market_data.settings.tavily_api_key", "fake-key"), patch(
-        "app.market_data.requests.post", side_effect=TimeoutError("timed out")
+    with (
+        patch("app.market_data.settings.tavily_api_key", "fake-key"),
+        patch("app.market_data.requests.post", side_effect=TimeoutError("timed out")),
     ):
         result = fetch_web_context("AAPL", "recent news")
 

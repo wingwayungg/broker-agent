@@ -11,6 +11,10 @@ pip install -r requirements-dev.txt    # exact lock; requirements.txt is the run
 uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt [--upgrade]
 uv pip compile requirements-dev.in --universal --python-version 3.14 -o requirements-dev.txt [--upgrade]
 
+ruff check . [--fix]                   # lint (E,F,I,B,UP; config in pyproject.toml)
+ruff format .                          # format (line length 100)
+pyright                                # type-check app/ (basic mode; config in pyproject.toml)
+
 python -m pytest                       # full suite, offline (~1s); Atlas tests skip without MONGODB_TEST_URI
 docker run -d -p 27017:27017 mongodb/mongodb-atlas-local   # then:
 MONGODB_TEST_URI='mongodb://localhost:27017/?directConnection=true' python -m pytest tests/test_rag_atlas.py
@@ -23,7 +27,7 @@ fly deploy                             # deploys the Dockerfile; app name in fly
 python -m evals.filings_eval [--judge] # 10-K retrieval eval (network: EDGAR + Atlas via MONGODB_URI; --judge also uses the LLM)
 ```
 
-There is no linter/formatter config. `.env` holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, `SEC_USER_AGENT` and `MONGODB_URI` (10-K search), optional `LANGGRAPH_AES_KEY`/`CHECKPOINT_TTL_DAYS`/`MONGODB_DB`/`LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
+Ruff is the linter and formatter and pyright the type checker (dev-only; `pyproject.toml`). `.env` holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, `SEC_USER_AGENT` and `MONGODB_URI` (10-K search), optional `LANGGRAPH_AES_KEY`/`CHECKPOINT_TTL_DAYS`/`MONGODB_DB`/`LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
 
 ## Architecture
 

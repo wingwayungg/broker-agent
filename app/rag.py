@@ -52,15 +52,16 @@ Design choices:
   controls") that keyword search nails. evals/ measures each mode
   separately so that trade-off is a number, not a claim.
 """
+
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-import time
 from threading import Lock
 from typing import Any, Literal, Protocol
 
+import numpy as np
 from bson.binary import Binary, BinaryVectorDtype
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-import numpy as np
 from pymongo import ASCENDING, MongoClient
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
@@ -98,7 +99,7 @@ _HIT_FIELDS = ["symbol", "company", "fiscal_year", "filing_date", "url", "sectio
 
 
 class Embedder(Protocol):
-    def encode(self, texts: list[str]) -> np.ndarray: ...
+    def encode(self, texts: list[str], /) -> np.ndarray: ...
 
 
 @dataclass(frozen=True)
@@ -250,7 +251,9 @@ class FilingIndex:
             # Search indexes can only be created on an existing collection.
             db.create_collection("chunks")
         self._chunks = db["chunks"]
-        self._chunks.create_index([("variant", ASCENDING), ("symbol", ASCENDING), ("fiscal_year", ASCENDING)])
+        self._chunks.create_index(
+            [("variant", ASCENDING), ("symbol", ASCENDING), ("fiscal_year", ASCENDING)]
+        )
         self._chunks.create_index([("variant", ASCENDING), ("accession", ASCENDING)])
         self._ensure_search_indexes(dim)
 
@@ -262,11 +265,17 @@ class FilingIndex:
             )
         if _VECTOR_INDEX not in existing:
             self._chunks.create_search_index(
-                SearchIndexModel(_vector_index_definition(dim), name=_VECTOR_INDEX, type="vectorSearch")
+                SearchIndexModel(
+                    _vector_index_definition(dim), name=_VECTOR_INDEX, type="vectorSearch"
+                )
             )
         else:
             definition = existing[_VECTOR_INDEX].get("latestDefinition", {})
-            dims = [f.get("numDimensions") for f in definition.get("fields", []) if f.get("type") == "vector"]
+            dims = [
+                f.get("numDimensions")
+                for f in definition.get("fields", [])
+                if f.get("type") == "vector"
+            ]
             if dims and dims[0] != dim:
                 raise ValueError(
                     f"The {_VECTOR_INDEX} Atlas index holds {dims[0]}-dim vectors but the "
@@ -276,7 +285,9 @@ class FilingIndex:
         deadline = time.time() + _INDEX_READY_SECONDS
         while time.time() < deadline:
             indexes = list(self._chunks.list_search_indexes())
-            if all(i.get("queryable") for i in indexes if i["name"] in (_TEXT_INDEX, _VECTOR_INDEX)):
+            if all(
+                i.get("queryable") for i in indexes if i["name"] in (_TEXT_INDEX, _VECTOR_INDEX)
+            ):
                 return
             time.sleep(1)
 
@@ -304,7 +315,7 @@ class FilingIndex:
             with ThreadPoolExecutor(max_workers=max(len(refs), 1)) as pool:
                 fetched = list(pool.map(self._fetch_filing, refs))
             pending = []
-            for ref, result in zip(refs, fetched):
+            for ref, result in zip(refs, fetched, strict=True):
                 if isinstance(result, FilingUnavailable):
                     error = error or result
                 elif result is not None:
@@ -323,11 +334,15 @@ class FilingIndex:
             if error and not self.indexed_years(symbol):
                 raise error
 
-    def _fetch_filing(self, ref: FilingRef) -> list[tuple[str, str, str]] | FilingUnavailable | None:
+    def _fetch_filing(
+        self, ref: FilingRef
+    ) -> list[tuple[str, str, str]] | FilingUnavailable | None:
         """Download and chunk one filing as (item, title, text) rows; None if
         it's already indexed. Runs in a worker thread, so a failure is
         returned rather than raised."""
-        if self._chunks.count_documents({"variant": self.variant, "accession": ref.accession}, limit=1):
+        if self._chunks.count_documents(
+            {"variant": self.variant, "accession": ref.accession}, limit=1
+        ):
             return None
         try:
             rows = []
@@ -371,7 +386,7 @@ class FilingIndex:
                         np.asarray(vector, dtype=np.float32).tolist(), BinaryVectorDtype.FLOAT32
                     ),
                 }
-                for (item, title, text), vector in zip(rows, vectors)
+                for (item, title, text), vector in zip(rows, vectors, strict=True)
             ]
         )
         return ref.accession, len(rows), vectors[0]
@@ -410,8 +425,10 @@ class FilingIndex:
             texts = list(self._chunks.aggregate(text_count))
             vecs = list(self._chunks.aggregate(vector_count))
             if (
-                texts and texts[0]["count"]["total"] >= expected
-                and vecs and vecs[0]["n"] >= expected
+                texts
+                and texts[0]["count"]["total"] >= expected
+                and vecs
+                and vecs[0]["n"] >= expected
             ):
                 return
             time.sleep(0.5)

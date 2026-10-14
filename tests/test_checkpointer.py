@@ -6,6 +6,7 @@ is skipped unless MONGODB_TEST_URI is set (any MongoDB works; the Atlas Local
 container from tests/test_rag_atlas.py is fine). It uses its own database,
 dropped afterwards.
 """
+
 import asyncio
 import os
 import uuid
@@ -38,8 +39,12 @@ def test_falls_back_to_memory_when_the_database_is_unreachable():
         async with mongo_checkpointer() as saver:
             return type(saver)
 
-    with patch.object(checkpointer.settings, "mongodb_uri", "mongodb://x"), \
-            patch.object(checkpointer, "MongoDBSaver", side_effect=ServerSelectionTimeoutError("timed out")):
+    with (
+        patch.object(checkpointer.settings, "mongodb_uri", "mongodb://x"),
+        patch.object(
+            checkpointer, "MongoDBSaver", side_effect=ServerSelectionTimeoutError("timed out")
+        ),
+    ):
         assert asyncio.run(saver_type()) is InMemorySaver
 
 
@@ -53,8 +58,10 @@ def test_a_key_of_the_wrong_length_refuses_to_boot():
         async with mongo_checkpointer():
             pass
 
-    with patch.object(checkpointer.settings, "mongodb_uri", "mongodb://x"), \
-            patch.object(checkpointer.settings, "checkpoint_aes_key", "too-short"):
+    with (
+        patch.object(checkpointer.settings, "mongodb_uri", "mongodb://x"),
+        patch.object(checkpointer.settings, "checkpoint_aes_key", "too-short"),
+    ):
         with pytest.raises(ValueError, match="16, 24, or 32"):
             asyncio.run(boot())
 
@@ -85,8 +92,10 @@ def test_encrypted_threads_expire_and_old_plain_ones_still_load():
             return (await compiled.aget_state(config)).values["messages"]
 
     try:
-        with patch.object(checkpointer.settings, "mongodb_uri", _URI), \
-                patch.object(checkpointer.settings, "mongodb_db", db):
+        with (
+            patch.object(checkpointer.settings, "mongodb_uri", _URI),
+            patch.object(checkpointer.settings, "mongodb_db", db),
+        ):
             with patch.object(checkpointer.settings, "checkpoint_aes_key", ""):
                 asyncio.run(run(turn=True))  # written as plain text
             # strip created_at to look like a pre-TTL document
@@ -98,7 +107,9 @@ def test_encrypted_threads_expire_and_old_plain_ones_still_load():
                 new = asyncio.run(run(turn=False))
             with MongoClient(_URI, serverSelectionTimeoutMS=5000) as client:
                 docs = list(client[db]["checkpoints"].find())
-                ttl = [i for i in client[db]["checkpoints"].list_indexes() if "expireAfterSeconds" in i]
+                ttl = [
+                    i for i in client[db]["checkpoints"].list_indexes() if "expireAfterSeconds" in i
+                ]
     finally:
         with MongoClient(_URI, serverSelectionTimeoutMS=5000) as client:
             client.drop_database(db)
@@ -128,8 +139,10 @@ def test_thread_survives_a_new_saver_on_the_same_database():
             return (await compiled.aget_state(config)).values["messages"]
 
     try:
-        with patch.object(checkpointer.settings, "mongodb_uri", _URI), \
-                patch.object(checkpointer.settings, "mongodb_db", db):
+        with (
+            patch.object(checkpointer.settings, "mongodb_uri", _URI),
+            patch.object(checkpointer.settings, "mongodb_db", db),
+        ):
             asyncio.run(run(first_turn=True))
             messages = asyncio.run(run(first_turn=False))
     finally:

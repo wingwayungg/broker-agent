@@ -11,13 +11,13 @@ If you already have a class wrapping your broker's SDK, the cleanest path
 is usually to import it here and call its methods from inside these
 wrappers, translating its raw responses into the Pydantic models below.
 """
+
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.config import settings
 from app.market_data import fetch_current_price
 from app.models import AccountSummary, BracketOrderStatus, Fill, OpenOrder, Position
-
 
 # Fallback prices used only when a live quote can't be fetched (e.g. no
 # network), so the mock client still demos something reasonable.
@@ -49,7 +49,7 @@ class BrokerClient:
                 prices = pool.map(_live_or_fallback_price, [symbol for symbol, _, _ in holdings])
             return [
                 Position(symbol=symbol, quantity=quantity, avg_cost=avg_cost, current_price=price)
-                for (symbol, quantity, avg_cost), price in zip(holdings, prices)
+                for (symbol, quantity, avg_cost), price in zip(holdings, prices, strict=True)
             ]
         raise NotImplementedError("Wire up a live broker connection here")
 
@@ -87,7 +87,7 @@ class BrokerClient:
                     action="BUY",
                     quantity=40,
                     price=118.50,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 ),
             ]
         raise NotImplementedError("Wire up a live broker connection here")

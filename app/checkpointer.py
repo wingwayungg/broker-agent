@@ -34,8 +34,8 @@ gives them one (their 30 days start then).
 With `MONGODB_URI` unset, or Atlas unreachable at startup, this yields an
 in-memory saver (and logs why) rather than keeping the whole app from booting,
 as `search_filings` degrades rather than raises. Threads then last only until
-the next restart, as they did before this module. The in-process `agent` in app/agent.py (CLI and /ask)
-keeps its own MemorySaver and doesn't use this.
+the next restart, as they did before this module. The in-process `agent` in
+app/agent.py (CLI and /ask) keeps its own MemorySaver and doesn't use this.
 """
 
 import asyncio

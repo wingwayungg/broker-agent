@@ -25,10 +25,11 @@ indexed separately, under its own `variant` in the shared collection (see
 app/rag.py). Not part of pytest — it needs the network and, with --judge,
 LLM quota.
 """
+
 import argparse
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -131,7 +132,9 @@ def main() -> None:
     parser.add_argument("--modes", nargs="+", default=["bm25", "dense", "hybrid"])
     parser.add_argument("--chunk-words", type=int, default=250)
     parser.add_argument("--overlap-words", type=int, default=40)
-    parser.add_argument("--judge", action="store_true", help="also grade generated answers with the LLM")
+    parser.add_argument(
+        "--judge", action="store_true", help="also grade generated answers with the LLM"
+    )
     parser.add_argument("--judge-mode", default="hybrid", help="retrieval mode used for --judge")
     args = parser.parse_args()
 
@@ -147,24 +150,37 @@ def main() -> None:
         index.ensure_indexed(symbol)
 
     n = sum(1 for c in cases if c["evidence"])
-    print(f"Retrieval — {n} answerable questions, k={args.k}, "
-          f"{args.chunk_words}-word chunks, {settings.embedding_model}")
+    print(
+        f"Retrieval — {n} answerable questions, k={args.k}, "
+        f"{args.chunk_words}-word chunks, {settings.embedding_model}"
+    )
     print(f"  {'mode':<8} {'hit@1':>6} {f'hit@{args.k}':>6} {'mrr':>6}  misses")
     for mode in args.modes:
         s = _retrieval_scores(index, cases, mode, args.k)
-        print(f"  {mode:<8} {s['hit@1']:>6.2f} {s[f'hit@{args.k}']:>6.2f} {s['mrr']:>6.2f}  "
-              f"{', '.join(s['misses']) or '-'}")
+        print(
+            f"  {mode:<8} {s['hit@1']:>6.2f} {s[f'hit@{args.k}']:>6.2f} {s['mrr']:>6.2f}  "
+            f"{', '.join(s['misses']) or '-'}"
+        )
 
     if args.judge:
-        print(f"\nGeneration — {len(cases)} questions, {args.judge_mode} retrieval, "
-              f"LLM_PROVIDER={settings.llm_provider}")
+        print(
+            f"\nGeneration — {len(cases)} questions, {args.judge_mode} retrieval, "
+            f"LLM_PROVIDER={settings.llm_provider}"
+        )
         results = _judge(index, cases, args.judge_mode, args.k)
         unanswerable = {c["id"] for c in cases if not c["evidence"]}
         answered = [r for r in results if r["id"] not in unanswerable]
         declined = [r for r in results if r["id"] in unanswerable]
-        print(f"  faithfulness       {sum(bool(r.get('faithful')) for r in results)}/{len(results)}")
-        print(f"  correctness        {sum(bool(r.get('correct')) for r in answered)}/{len(answered)}")
-        print(f"  abstained when due {sum(bool(r.get('abstained')) for r in declined)}/{len(declined)}")
+        print(
+            f"  faithfulness       {sum(bool(r.get('faithful')) for r in results)}/{len(results)}"
+        )
+        print(
+            f"  correctness        {sum(bool(r.get('correct')) for r in answered)}/{len(answered)}"
+        )
+        print(
+            f"  abstained when due {sum(bool(r.get('abstained')) for r in declined)}"
+            f"/{len(declined)}"
+        )
 
 
 if __name__ == "__main__":

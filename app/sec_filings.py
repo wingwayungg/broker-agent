@@ -19,9 +19,10 @@ discussion, market risk); Item 8's financial statements are mostly XBRL
 tables that chunk badly and would roughly double the embedding work per
 filing for content that structured data APIs serve better anyway.
 """
+
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-import re
 from threading import Lock
 
 import requests
@@ -160,8 +161,19 @@ def fetch_sections(ref: FilingRef) -> list[Section]:
 
 
 _BLOCK_TAGS = {
-    "p", "div", "br", "tr", "li", "table", "section",
-    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p",
+    "div",
+    "br",
+    "tr",
+    "li",
+    "table",
+    "section",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
 }
 _SKIP_TAGS = {"script", "style", "head", "title", "ix:header"}
 
@@ -257,7 +269,7 @@ def split_sections(text: str) -> list[Section]:
             runs.append((m.start(), item))
 
     best: dict[str, tuple[int, int]] = {}
-    for (start, item), (next_start, _) in zip(runs, runs[1:] + [(len(text), "")]):
+    for (start, item), (next_start, _) in zip(runs, runs[1:] + [(len(text), "")], strict=True):
         if item not in SECTIONS:
             continue
         prev = best.get(item)

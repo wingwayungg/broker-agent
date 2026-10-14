@@ -4,11 +4,11 @@ builds, and the search_filings tool. Ingest and ranking need a real Atlas
 Search deployment and live in tests/test_rag_atlas.py; here the tool runs
 against a stub index, so nothing touches the network or loads weights.
 """
+
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pymongo.errors import ServerSelectionTimeoutError
 
 from app import rag
@@ -32,7 +32,12 @@ def test_chunk_text_splits_a_paragraph_longer_than_the_target():
     assert [len(c.split()) for c in chunks] == [100, 100, 50]
 
 
-_FILTERS = {"variant": "hash-250w", "symbol": "NVDA'; drop", "fiscal_year": 2026, "section_item": "1A"}
+_FILTERS = {
+    "variant": "hash-250w",
+    "symbol": "NVDA'; drop",
+    "fiscal_year": 2026,
+    "section_item": "1A",
+}
 
 
 def _stage(pipeline, name):
@@ -58,9 +63,10 @@ def test_pipeline_dense_prefilters_vector_search():
 def test_pipeline_hybrid_fuses_both_searches_with_the_same_filters():
     pipeline = _pipeline("hybrid", "q", [0.1, 0.2], _FILTERS, 5)
     fusion = _stage(pipeline, "$rankFusion")["input"]["pipelines"]
-    assert _stage(fusion["vector"], "$vectorSearch")["filter"] == _stage(
-        _pipeline("dense", "q", [0.1, 0.2], _FILTERS, 5), "$vectorSearch"
-    )["filter"]
+    assert (
+        _stage(fusion["vector"], "$vectorSearch")["filter"]
+        == _stage(_pipeline("dense", "q", [0.1, 0.2], _FILTERS, 5), "$vectorSearch")["filter"]
+    )
     assert _stage(fusion["text"], "$search") == _stage(
         _pipeline("bm25", "q", None, _FILTERS, 5), "$search"
     )
@@ -96,7 +102,9 @@ class _StubIndex:
     def retrieve(self, symbol, query, *, fiscal_year=None, section=None):
         self.retrieved.append((symbol, query, fiscal_year, section))
         if fiscal_year == 2026:
-            return [_hit(2026, "Item 1A. Risk Factors", "Export controls on China restrict H20 sales.")]
+            return [
+                _hit(2026, "Item 1A. Risk Factors", "Export controls on China restrict H20 sales.")
+            ]
         return [_hit(2025, "Item 1A. Risk Factors", "We depend on TSMC in Taiwan for wafers.")]
 
 
@@ -120,7 +128,11 @@ def test_search_filings_numbers_continue_after_earlier_searches(stub_index):
     first = _search({"symbol": "NVDA", "query": "risks"})
     assert "\n[1] NVDA 10-K FY2026" in first
 
-    second_call = {"name": "search_filings", "id": "c2", "args": {"symbol": "NVDA", "query": "risks", "fiscal_year": 2025}}
+    second_call = {
+        "name": "search_filings",
+        "id": "c2",
+        "args": {"symbol": "NVDA", "query": "risks", "fiscal_year": 2025},
+    }
     thread = [
         HumanMessage("q"),
         AIMessage("", tool_calls=[{"name": "search_filings", "id": "c1", "args": {}}]),
@@ -135,12 +147,18 @@ def test_search_filings_numbers_continue_after_earlier_searches(stub_index):
 def test_parallel_search_filings_calls_get_separate_number_blocks(stub_index):
     calls = [
         {"name": "search_filings", "id": "a", "args": {"symbol": "NVDA", "query": "risks"}},
-        {"name": "search_filings", "id": "b", "args": {"symbol": "NVDA", "query": "risks", "fiscal_year": 2025}},
+        {
+            "name": "search_filings",
+            "id": "b",
+            "args": {"symbol": "NVDA", "query": "risks", "fiscal_year": 2025},
+        },
     ]
     thread = [HumanMessage("q"), AIMessage("", tool_calls=calls)]
 
     assert "\n[1] NVDA 10-K FY2026" in _search(calls[0]["args"], thread, call_id="a")
-    assert f"\n[{1 + rag.EXCERPTS_PER_SEARCH}] NVDA 10-K FY2025" in _search(calls[1]["args"], thread, call_id="b")
+    assert f"\n[{1 + rag.EXCERPTS_PER_SEARCH}] NVDA 10-K FY2025" in _search(
+        calls[1]["args"], thread, call_id="b"
+    )
 
 
 def test_search_filings_tool_returns_numbered_cited_excerpts(stub_index):
@@ -148,7 +166,10 @@ def test_search_filings_tool_returns_numbered_cited_excerpts(stub_index):
 
     assert result.startswith("Excerpts from NVIDIA CORP (NVDA) 10-K filings")
     assert "indexed fiscal years: 2026, 2025" in result
-    assert "[1] NVDA 10-K FY2026 · Item 1A. Risk Factors · filed 2026-02-25 · https://www.sec.gov/fake/2026.htm\nExport controls" in result
+    assert (
+        "[1] NVDA 10-K FY2026 · Item 1A. Risk Factors · filed 2026-02-25 "
+        "· https://www.sec.gov/fake/2026.htm\nExport controls" in result
+    )
 
 
 def test_search_filings_tool_defaults_to_the_latest_fiscal_year(stub_index):
@@ -162,13 +183,17 @@ def test_search_filings_tool_reports_unindexed_year(stub_index):
 
 
 def test_search_filings_tool_reports_edgar_failure(stub_index):
-    with patch.object(stub_index, "ensure_indexed", side_effect=FilingUnavailable("ZZZZ isn't in SEC EDGAR")):
+    with patch.object(
+        stub_index, "ensure_indexed", side_effect=FilingUnavailable("ZZZZ isn't in SEC EDGAR")
+    ):
         result = _search({"symbol": "ZZZZ", "query": "risks"})
     assert result == "[filings unavailable: ZZZZ isn't in SEC EDGAR]"
 
 
 def test_search_filings_tool_reports_unreachable_database(stub_index):
-    with patch.object(stub_index, "ensure_indexed", side_effect=ServerSelectionTimeoutError("timed out")):
+    with patch.object(
+        stub_index, "ensure_indexed", side_effect=ServerSelectionTimeoutError("timed out")
+    ):
         result = _search({"symbol": "NVDA", "query": "risks"})
     assert result == "[filings unavailable: the filings database is unreachable]"
 

@@ -16,6 +16,7 @@ to see or answer its own confirmation prompts — it isn't invoked again
 until a real reply comes back from a human. That's what makes this
 human-in-the-loop rather than just an LLM being told to ask nicely.
 """
+
 import re
 from typing import Annotated
 
@@ -90,10 +91,7 @@ def get_recent_fills() -> str:
     fills = broker_client.get_recent_fills()
     if not fills:
         return "No recent fills."
-    lines = [
-        f"{f.timestamp}: {f.action} {f.quantity} {f.symbol} @ ${f.price:.2f}"
-        for f in fills
-    ]
+    lines = [f"{f.timestamp}: {f.action} {f.quantity} {f.symbol} @ ${f.price:.2f}" for f in fills]
     return "\n".join(lines)
 
 
@@ -138,7 +136,9 @@ def _first_excerpt_number(messages: list, tool_call_id: str) -> int:
     ]
     start = max(used, default=0) + 1
     last = messages[-1] if messages else None
-    siblings = [c["id"] for c in getattr(last, "tool_calls", None) or [] if c["name"] == "search_filings"]
+    siblings = [
+        c["id"] for c in getattr(last, "tool_calls", None) or [] if c["name"] == "search_filings"
+    ]
     if tool_call_id in siblings:
         start += siblings.index(tool_call_id) * EXCERPTS_PER_SEARCH
     return start
