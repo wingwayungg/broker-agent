@@ -83,7 +83,6 @@ RetrievalMode = Literal["hybrid", "bm25", "dense"]
 _RECHECK_SECONDS = 24 * 3600
 # Each ranker's candidate depth before fusion.
 _CANDIDATES = 30
-# Excerpts one search returns to the model.
 EXCERPTS_PER_SEARCH = 5
 # How long to wait for Atlas's search indexes: to become queryable when
 # first created, and to catch up after a filing is inserted.

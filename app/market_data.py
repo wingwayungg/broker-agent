@@ -75,8 +75,6 @@ def _fetch_chart_data(symbol: str) -> tuple[dict, list[float]]:
     with _chart_cache_lock:
         _chart_cache.pop(symbol, None)
         if len(_chart_cache) >= _CHART_CACHE_MAX_ENTRIES:
-            # Dicts keep insertion order and re-fetches re-insert at the end,
-            # so the first key is the oldest entry.
             _chart_cache.pop(next(iter(_chart_cache)))
         _chart_cache[symbol] = (now, data)
     return data

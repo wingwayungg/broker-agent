@@ -94,6 +94,7 @@ Embedding model choice is memory-bound. The Dockerfile bakes the model from buil
 
 ## Conventions
 
+- Don't write comments that restate what the code does, teach a language or library feature (`MemorySaver`, dict ordering), suggest alternatives ("swap for X if you want"), or give example code for a stub. Assume the reader knows Python and LangGraph. Comment only a non-obvious *why*: an external quirk (Yahoo's `chartPreviousClose`, Fly suspending the VM), a deliberate trade-off, or a constraint the code can't show. Don't repeat in a comment what a name, docstring, or this file already says.
 - The system prompt in `app/agent.py` asks for GFM tables for multi-row results; the frontend has a hand-rolled markdown renderer (`renderMarkdown`) that only handles paragraphs, inline bold/italic/code, lists, and tables — extend it if the prompt starts requesting other markdown.
 - The agent must not give buy/sell/hold advice; trading-decision questions are routed to `research_stock`. Keep new prompts and tool docstrings consistent with that.
 - Deployment target is a 1GB Fly VM with no volume (`fly.toml`; it was 512MB until LanceDB, which has since been replaced by Atlas, so it may fit 512MB again once measured; older docstrings still cite 512MB); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, notebooks, and README from the image.

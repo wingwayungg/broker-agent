@@ -51,9 +51,6 @@ class BrokerClient:
                 Position(symbol=symbol, quantity=quantity, avg_cost=avg_cost, current_price=price)
                 for (symbol, quantity, avg_cost), price in zip(holdings, prices)
             ]
-        # TODO: replace with a real broker call, e.g.:
-        # raw = self._real_client.get_positions()
-        # return [Position(symbol=p.symbol, quantity=p.qty, ...) for p in raw]
         raise NotImplementedError("Wire up a live broker connection here")
 
     def get_account_summary(self) -> AccountSummary:

@@ -119,7 +119,6 @@ def research_stock(symbol: str) -> str:
     return _research_stock(symbol)
 
 
-# The start of each excerpt's citation line in format_hits' output.
 _EXCERPT_NUMBER = re.compile(r"^\[(\d+)\] \S+ 10-K FY\d{4} · ", re.MULTILINE)
 
 

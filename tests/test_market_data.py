@@ -58,7 +58,6 @@ def test_fetch_price_snapshot_happy_path():
         result = fetch_price_snapshot("AAPL")
 
     assert "Current price: $330.00" in result
-    # prev_close must come from closes[-2] (315.5), not chartPreviousClose.
     assert f"Change vs previous close: {(330.0 - 315.5) / 315.5 * 100:+.2f}%" in result
     assert "Day range: $328.00 - $332.00" in result
     assert "52-week range: $243.42 - $344.57" in result

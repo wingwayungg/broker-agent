@@ -106,13 +106,6 @@ def _build_graph() -> StateGraph:
 
 
 def build_agent():
-    # MemorySaver keeps per-thread conversation state in memory so
-    # follow-up questions in the same session have context. Swap for a
-    # persistent checkpointer (e.g. SqliteSaver) if you want sessions to
-    # survive a restart. This checkpointer only serves the in-process path
-    # (`ask()` in local_api_cli/session.py, and the notebooks); the
-    # LangGraph API path uses `platform_graph`, whose checkpoints go to Atlas
-    # through app/checkpointer.py instead.
     checkpointer = MemorySaver()
     return _build_graph().compile(checkpointer=checkpointer)
 

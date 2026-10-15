@@ -22,7 +22,6 @@ def test_chunk_text_packs_paragraphs_with_overlap():
     chunks = chunk_text("\n".join(paragraphs), target_words=100, overlap_words=40)
 
     assert chunks[0].split("\n") == paragraphs[0:2]
-    # The last paragraph of each chunk opens the next one.
     assert chunks[1].split("\n") == paragraphs[1:3]
     assert chunks[-1].split("\n")[-1] == paragraphs[-1]
     assert all(len(c.split()) <= 100 for c in chunks)
@@ -129,7 +128,6 @@ def test_search_filings_numbers_continue_after_earlier_searches(stub_index):
         AIMessage("", tool_calls=[second_call]),
     ]
     second = _search(second_call["args"], thread, call_id="c2")
-    # One hit came back before, so this search starts at [2], not [1] again.
     assert "\n[2] NVDA 10-K FY2025" in second
     assert "\n[1] " not in second
 
