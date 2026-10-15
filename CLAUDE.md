@@ -20,7 +20,7 @@ fly deploy                             # deploys the Dockerfile; app name in fly
 python -m evals.filings_eval [--judge] # 10-K retrieval eval (network: EDGAR + Atlas via MONGODB_URI; --judge also uses the LLM)
 ```
 
-There is no linter/formatter config. `.env` holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, `SEC_USER_AGENT` and `MONGODB_URI` (10-K search), optional `MONGODB_DB`/`LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
+There is no linter/formatter config. `.env` holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, `SEC_USER_AGENT` and `MONGODB_URI` (10-K search), optional `LANGGRAPH_AES_KEY`/`CHECKPOINT_TTL_DAYS`/`MONGODB_DB`/`LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
 
 ## Architecture
 
@@ -55,7 +55,7 @@ Imports only go downward. `local_api_cli/` holds the in-process runners (termina
 3. `ToolNode` runs the tool. Read-only tools return formatted strings that the LLM turns into prose/tables on the next loop. `buy_stock` may instead hit `interrupt()`, which surfaces as `__interrupt__` in the result — the caller shows `value["message"]` and waits for a human.
 4. Loop continues until the model replies without tool calls.
 
-Memory is per `thread_id`. Under `langgraph dev` (what Fly runs) checkpoints go to Atlas (`checkpoints`/`checkpoint_writes`) through the custom saver `app/checkpointer.py`, named by `langgraph.json`'s `checkpointer` key, so threads survive restarts and spin-downs; it falls back to an in-memory saver if `MONGODB_URI` is unset or Atlas is unreachable at startup. Only checkpoints persist: the platform keeps thread *records* in memory (pickled to `.langgraph_api/`, lost on Fly), so after a restart the browser UI's stored thread 404s and it recreates the record under the same id (`recreateThread` in `app/static/app.js`, `POST /threads` with `if_exists: "do_nothing"` and `metadata.graph_id: "agent"`, without which the state endpoint returns `{}`), and the history reads back from Atlas. The in-process `agent` (CLI and `/ask`) still uses `MemorySaver`.
+Memory is per `thread_id`. Under `langgraph dev` (what Fly runs) checkpoints go to Atlas (`checkpoints`/`checkpoint_writes`) through the custom saver `app/checkpointer.py`, named by `langgraph.json`'s `checkpointer` key, so threads survive restarts and spin-downs; they are AES-encrypted when `LANGGRAPH_AES_KEY` is set and expire after `CHECKPOINT_TTL_DAYS` (default 30) via a TTL index on `created_at` (details in the module docstring); it falls back to an in-memory saver if `MONGODB_URI` is unset or Atlas is unreachable at startup. Only checkpoints persist: the platform keeps thread *records* in memory (pickled to `.langgraph_api/`, lost on Fly), so after a restart the browser UI's stored thread 404s and it recreates the record under the same id (`recreateThread` in `app/static/app.js`, `POST /threads` with `if_exists: "do_nothing"` and `metadata.graph_id: "agent"`, without which the state endpoint returns `{}`), and the history reads back from Atlas. The in-process `agent` (CLI and `/ask`) still uses `MemorySaver`.
 
 ### Two compiled graphs, two entry paths
 

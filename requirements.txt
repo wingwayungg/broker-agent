@@ -24,3 +24,5 @@ pymongo>=4.10
 langchain-text-splitters>=1.0.0
 # Chat-thread checkpoints in the same Atlas cluster (app/checkpointer.py)
 langgraph-checkpoint-mongodb>=0.5.1
+# AES for those checkpoints (LANGGRAPH_AES_KEY), see app/checkpointer.py
+pycryptodome>=3.20.0

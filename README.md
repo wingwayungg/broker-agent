@@ -110,7 +110,7 @@ Nothing after the first message names a company again. "Compare two stocks" has 
 
 - **Plain `requests` rather than MCP or vendor SDKs.** Real-time market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: the result is more deterministic and what MCP is actually good at — letting a model discover and pick among tools — has nothing to add here. The REST APIs already do the job that an MCP server does, and one `requests.get` is lighter on a small instance than an extra dependency chain (see the full reasoning in `app/market_data.py`).
 
-- **Thread memory.** Each conversation's checkpoints are stored in the same MongoDB Atlas cluster as the 10-K index, so refreshing the browser, redeploying or the free instance spinning down doesn't lose the chat: the page reopens its thread by id and the history comes back. Each browser tab is its own thread and remembers its id only for the life of the tab; there is no list of past threads yet. Without `MONGODB_URI` (or if Atlas is unreachable at startup) threads fall back to server memory and are lost on restart. The CLI and the `/ask` API still keep threads in memory only.
+- **Thread memory.** Each conversation's checkpoints are stored in the same MongoDB Atlas cluster as the 10-K index, so refreshing the browser, redeploying or the free instance spinning down doesn't lose the chat: the page reopens its thread by id and the history comes back. Each browser tab is its own thread and remembers its id only for the life of the tab. Chat history is AES-encrypted in Atlas database and deleted after 30 days.
 
 - **A maximum token size (upcoming)** Every turn currently resends the whole thread to the model, so a long conversation keeps growing — more cost, slower replies, and eventually the model's context window is exceeded. The next step is a token budget on the thread: once it is reached, the oldest turns are condensed into a short running summary rather than simply dropped, so the assistant still knows which stocks were discussed and what was already researched while the context stays within the limit.
 
@@ -133,6 +133,7 @@ pip install -r requirements-dev.txt    # or requirements.txt if you don't need t
 # and SEC_USER_AGENT="Your Name you@example.com" for 10-K search (EDGAR requires a contact)
 # plus MONGODB_URI for 10-K search: a free Atlas M0 cluster in AWS us-east-1 (near Fly's iad), a database user,
 # and Network Access 0.0.0.0/0 (Fly machines have no static IP); set the same URI on Fly with `fly secrets set MONGODB_URI=...`
+# and a 32-character LANGGRAPH_AES_KEY to encrypt saved chats (`fly secrets set LANGGRAPH_AES_KEY=...`; keep a copy, a lost key makes encrypted threads unreadable)
 # to use Groq instead, uncomment langchain-groq in requirements.txt, reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
 
 langgraph dev                 # browser chat at http://localhost:2024/

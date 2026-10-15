@@ -23,6 +23,11 @@ class Settings:
     # means search_filings reports itself unavailable; nothing else needs it.
     mongodb_uri: str = os.getenv("MONGODB_URI", "")
     mongodb_db: str = os.getenv("MONGODB_DB", "broker_agent")
+    # Chat checkpoints (app/checkpointer.py): AES key (16/24/32 bytes) that
+    # encrypts them in Atlas, unset = stored as plain text; and how many days
+    # a checkpoint lives before Atlas deletes it.
+    checkpoint_aes_key: str = os.getenv("LANGGRAPH_AES_KEY", "")
+    checkpoint_ttl_days: int = int(os.getenv("CHECKPOINT_TTL_DAYS", "30"))
 
     broker_host: str = os.getenv("BROKER_HOST", "127.0.0.1")
     broker_port: int = int(os.getenv("BROKER_PORT", "7497"))
