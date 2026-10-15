@@ -111,7 +111,7 @@ PAGE = r"""<!DOCTYPE html>
 </script>
 <footer>
   <div id="input-card">
-    <input id="input" type="text" placeholder="Ask about your portfolio..." autocomplete="off">
+    <input id="input" type="text" placeholder="Ask the AI assistant about your portfolio, a stock, or a 10-K..." autocomplete="off">
     <button id="send">Send</button>
   </div>
 </footer>
