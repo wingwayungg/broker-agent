@@ -152,11 +152,13 @@ function addConfirm(text) {
 }
 
 // The id lives in the URL so a reload or a shared link reopens the same
-// conversation. It is interpolated into request paths, so anything but a
-// plain id is ignored.
+// conversation. The API only accepts UUIDs (422 otherwise) and the id is
+// interpolated into request paths, so anything else is dropped.
 function getStoredThread() {
     const id = new URLSearchParams(location.search).get("thread_id");
-    return id && /^[\w-]+$/.test(id) ? id : null;
+    if (id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return id;
+    if (id !== null) storeThread(null);
+    return null;
 }
 
 function storeThread(id) {
@@ -410,7 +412,16 @@ async function restoreThread() {
         const runsRes = await fetch(`/threads/${threadId}/runs?limit=1`);
         if (!runsRes.ok) return;
         const latest = (await runsRes.json())[0];
-        if (!latest || !["pending", "running"].includes(latest.status)) return;
+        if (!latest || !["pending", "running"].includes(latest.status)) {
+            // An id is only written to the URL once a message is sent, so an
+            // idle thread with no history is an id the server never saw (the
+            // recreate above just made it an empty record).
+            if (!logInner.querySelector(".msg")) {
+                storeThread(null);
+                threadId = null;
+            }
+            return;
+        }
 
         const status = addMsg("Thinking...", "system");
         const modes = encodeURIComponent(JSON.stringify(STREAM_MODES));

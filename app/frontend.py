@@ -106,7 +106,7 @@ PAGE = r"""<!DOCTYPE html>
 // (same id check as getStoredThread in app.js).
 (function () {
   var t = new URLSearchParams(location.search).get("thread_id");
-  if (!t || !/^[\w-]+$/.test(t)) document.getElementById("log").className = "empty";
+  if (!t || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) document.getElementById("log").className = "empty";
 })();
 </script>
 <footer>
