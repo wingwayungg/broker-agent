@@ -229,6 +229,8 @@ def buy_stock(symbol: str, quantity: float) -> str:
             ),
             "symbol": symbol,
             "quantity": quantity,
+            "estimated_price": quote,
+            "estimated_cost": estimated_cost,
         }
     )
     if not _is_affirmative(second_reply):

@@ -55,16 +55,16 @@ LOGO_SVG = (
 )
 _FAVICON_SVG = (
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
-    "fill='none' stroke='#0a0a0a' stroke-width='1.3' stroke-linecap='round'>"
+    "fill='none' stroke='#1e3a64' stroke-width='1.3' stroke-linecap='round'>"
     "<line x1='6' y1='13' x2='6' y2='14'/>"
     "<line x1='6' y1='18' x2='6' y2='20'/>"
-    "<rect x='4' y='14' width='4' height='4' fill='#0a0a0a' stroke='none'/>"
+    "<rect x='4' y='14' width='4' height='4' fill='#1e3a64' stroke='none'/>"
     "<line x1='12' y1='3' x2='12' y2='6'/>"
     "<line x1='12' y1='13' x2='12' y2='17'/>"
     "<rect x='10' y='6' width='4' height='7'/>"
     "<line x1='18' y1='8' x2='18' y2='10'/>"
     "<line x1='18' y1='16' x2='18' y2='19'/>"
-    "<rect x='16' y='10' width='4' height='6' fill='#0a0a0a' stroke='none'/>"
+    "<rect x='16' y='10' width='4' height='6' fill='#1e3a64' stroke='none'/>"
     "</svg>"
 )
 FAVICON_HREF = "data:image/svg+xml," + quote(_FAVICON_SVG)
@@ -78,7 +78,7 @@ PAGE = r"""<!DOCTYPE html>
 <link rel="icon" type="image/svg+xml" href="__FAVICON_HREF__">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=__STYLE_CSS_VERSION__">
 </head>
 <body>
@@ -97,6 +97,11 @@ PAGE = r"""<!DOCTYPE html>
         <span class="logo"></span>
         <h2>Broker Portfolio Agent</h2>
         <p>Ask about your positions, research a ticker, or place a trade.</p>
+        <div class="suggestions">
+          <button type="button">Show my positions</button>
+          <button type="button">Research NVDA</button>
+          <button type="button">Risks in Apple's latest 10-K</button>
+        </div>
       </div>
     </div>
   </div>

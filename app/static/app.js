@@ -40,24 +40,42 @@ function splitRow(line) {
 
 const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/;
 
+const NUMERIC_CELL_RE = /^[+\-−]?\$?[+\-−]?[\d,]+(\.\d+)?%?$/;
+
+function cellValue(cell) {
+    return cell.replace(/\*\*|\*/g, "").trim();
+}
+
+// Columns the model left unaligned (a bare ---) are right-aligned when every
+// body cell is a figure, so prices and P&L line up on the decimal.
 function tableToHtml(lines) {
     const header = splitRow(lines[0]);
-    const aligns = splitRow(lines[1]).map((cell) => {
+    const rows = lines.slice(2).map(splitRow);
+    const aligns = splitRow(lines[1]).map((cell, col) => {
         const left = cell.startsWith(":");
         const right = cell.endsWith(":");
         if (left && right) return "center";
         if (right) return "right";
-        return "left";
+        if (left) return "left";
+        const values = rows.map((r) => cellValue(r[col] || "")).filter((v) => v && !/^([-–—]|n\/a)$/i.test(v));
+        return values.length && values.every((v) => NUMERIC_CELL_RE.test(v)) ? "right" : "left";
     });
+    const signClass = (cell) => {
+        const v = cellValue(cell);
+        if (!NUMERIC_CELL_RE.test(v)) return "";
+        if (/^\$?\+/.test(v)) return ' class="gain"';
+        if (/^\$?[-−]/.test(v)) return ' class="loss"';
+        return "";
+    };
     let html = '<div class="table-wrap"><table><thead><tr>';
     header.forEach((h, i) => {
         html += `<th style="text-align:${aligns[i] || "left"}">${inlineMd(h)}</th>`;
     });
     html += "</tr></thead><tbody>";
-    lines.slice(2).forEach((line) => {
+    rows.forEach((row) => {
         html += "<tr>";
-        splitRow(line).forEach((c, i) => {
-            html += `<td style="text-align:${aligns[i] || "left"}">${inlineMd(c)}</td>`;
+        row.forEach((c, i) => {
+            html += `<td${signClass(c)} style="text-align:${aligns[i] || "left"}">${inlineMd(c)}</td>`;
         });
         html += "</tr>";
     });
@@ -138,17 +156,57 @@ function addMsg(text, cls) {
     return div;
 }
 
-function addConfirm(text) {
-    const div = addMsg(text, "confirm");
-    const actions = document.createElement("div");
-    actions.className = "confirm-actions";
-    ["Yes", "No"].forEach((label) => {
-        const btn = document.createElement("button");
-        btn.textContent = label;
-        btn.onclick = () => sendMessage(label.toLowerCase());
-        actions.appendChild(btn);
+const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+// Renders buy_stock's interrupt payload as an order ticket. A payload without
+// order fields falls back to its plain message. Answering disables the
+// buttons so a stale ticket can't later send "yes" as a fresh message.
+function addConfirm(value) {
+    const isFinal = value.step === value.of;
+    let div;
+    if (value.symbol) {
+        div = addMsg("", "ticket");
+        const head = el("div", "ticket-head");
+        head.append(el("span", "", isFinal ? "Final confirmation" : "Confirm buy order"), el("span", "", `Step ${value.step} of ${value.of}`));
+        const body = el("div", "ticket-body");
+        const order = el("div", "ticket-order");
+        const shares = value.quantity === 1 ? "1 share" : `${value.quantity} shares`;
+        order.append(el("span", "ticket-symbol", value.symbol), el("span", "ticket-qty", shares));
+        body.append(order);
+        if (value.estimated_price != null) {
+            const dl = el("dl");
+            dl.append(el("dt", "", "Est. price"), el("dd", "", usd.format(value.estimated_price)));
+            dl.append(el("dt", "", "Est. cost"), el("dd", "", usd.format(value.estimated_cost)));
+            body.append(dl);
+        }
+        if (isFinal) body.append(el("p", "ticket-warning", "This submits the order and can't be undone."));
+        div.append(head, body);
+    } else {
+        div = addMsg(value.message, "confirm");
+    }
+    const actions = el("div", "confirm-actions");
+    const buttons = [
+        [isFinal ? "Place order" : "Continue", "yes", "primary"],
+        ["Cancel", "no", ""],
+    ].map(([label, reply, cls]) => {
+        const btn = el("button", cls, label);
+        btn.type = "button";
+        btn.onclick = () => {
+            if (busy) return;
+            buttons.forEach((b) => (b.disabled = true));
+            sendMessage(reply);
+        };
+        return btn;
     });
-    div.appendChild(actions);
+    actions.append(...buttons);
+    (div.querySelector(".ticket-body") || div).appendChild(actions);
 }
 
 // The id lives in the URL so a reload or a shared link reopens the same
@@ -230,6 +288,23 @@ function postRun(text, asResume) {
     });
 }
 
+const TOOL_LABELS = {
+    get_positions: "Checking your positions",
+    get_account_summary: "Checking your account",
+    get_open_orders: "Checking open orders",
+    get_recent_fills: "Checking recent fills",
+    get_bracket_order_status: "Checking bracket orders",
+    research_stock: "Researching",
+    search_filings: "Searching 10-K filings",
+    buy_stock: "Preparing your order",
+};
+
+function toolLabel(call) {
+    const label = TOOL_LABELS[call.name] || call.name;
+    const symbol = call.name === "research_stock" && call.args?.symbol;
+    return symbol ? `${label} ${String(symbol).toUpperCase()}` : label;
+}
+
 // Consumes a run's SSE stream, rendering into the log as events arrive:
 // `status` is the placeholder bubble ("Thinking...") that gets retitled for
 // tool calls and replaced by the streaming assistant reply, or removed if a
@@ -274,7 +349,7 @@ async function consumeStream(res, status) {
                 pendingInterrupt = true;
                 status.remove();
                 if (assistantDiv) assistantDiv.remove();
-                addConfirm(record.data.__interrupt__[0].value.message);
+                addConfirm(record.data.__interrupt__[0].value);
             } else if (record.eventType === "messages/partial" || record.eventType === "messages/complete") {
                 const msg = record.data[0];
                 if (msg?.type !== "ai" || !agentMsgIds.has(msg.id)) continue;
@@ -291,7 +366,7 @@ async function consumeStream(res, status) {
                     }
                     log.scrollTop = log.scrollHeight;
                 } else if (msg.tool_calls?.length && !assistantDiv) {
-                    status.textContent = "Calling " + msg.tool_calls[0].name + "...";
+                    status.textContent = toolLabel(msg.tool_calls[0]);
                 }
             }
         }
@@ -307,7 +382,7 @@ async function sendMessage(text) {
 
     addMsg(text, "user");
     resetBtn.classList.remove("hidden");
-    let status = addMsg("Thinking...", "system");
+    let status = addMsg("Thinking", "system pending");
 
     try {
         await ensureThread();
@@ -326,7 +401,7 @@ async function sendMessage(text) {
                 storeThread(null);
                 threadId = null;
                 pendingInterrupt = false;
-                status.textContent = "Starting a new conversation...";
+                status.textContent = "Starting a new conversation";
                 await ensureThread();
                 res = await postRun(text, false);
             }
@@ -378,7 +453,7 @@ function renderThreadState(state) {
     }
     const interrupt = state.interrupts?.[0] || state.tasks?.flatMap((t) => t.interrupts || [])[0];
     pendingInterrupt = Boolean(interrupt);
-    if (interrupt) addConfirm(interrupt.value.message);
+    if (interrupt) addConfirm(interrupt.value);
 }
 
 // The log lives only in the DOM, so any reload (a manual refresh, Chrome
@@ -423,7 +498,7 @@ async function restoreThread() {
             return;
         }
 
-        const status = addMsg("Thinking...", "system");
+        const status = addMsg("Thinking", "system pending");
         const modes = encodeURIComponent(JSON.stringify(STREAM_MODES));
         const joinRes = await fetch(`/threads/${threadId}/runs/${latest.run_id}/stream?stream_mode=${modes}`);
         if (joinRes.ok && joinRes.body) await consumeStream(joinRes, status);
@@ -442,6 +517,10 @@ async function restoreThread() {
 }
 
 sendBtn.onclick = () => sendMessage(input.value.trim());
+document.querySelector(".suggestions").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (btn) sendMessage(btn.textContent);
+});
 input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMessage(input.value.trim());
 });
