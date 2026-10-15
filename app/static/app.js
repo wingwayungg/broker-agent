@@ -129,7 +129,7 @@ function setContent(div, text, cls) {
 }
 
 function addMsg(text, cls) {
-    log.classList.remove("empty");
+    log.classList.remove("empty", "loading");
     const div = document.createElement("div");
     div.className = "msg " + cls;
     setContent(div, text, cls);
@@ -353,7 +353,7 @@ function renderThreadState(state) {
         return;
     }
     logInner.innerHTML = "";
-    log.classList.remove("empty");
+    log.classList.remove("empty", "loading");
     resetBtn.classList.remove("hidden");
     for (const msg of messages) {
         if (msg.type === "human") addMsg(msg.content, "user");
@@ -440,4 +440,12 @@ resetBtn.onclick = () => {
     showEmptyHero();
 };
 
-restoreThread();
+// The page starts in "loading" (see frontend.py) rather than showing the
+// welcome screen, since an empty log may just mean the stored thread's history
+// hasn't arrived yet (a suspended VM waking, or a thread recreated after a
+// restart). Once the first restore settles, show the welcome screen only if
+// nothing was rendered; a run being re-joined has already rendered its history.
+restoreThread().finally(() => {
+    log.classList.remove("loading");
+    if (!logInner.querySelector(".msg")) showEmptyHero();
+});

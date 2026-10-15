@@ -87,8 +87,12 @@ PAGE = r"""<!DOCTYPE html>
   <button id="reset" class="hidden">New conversation</button>
 </header>
 <main>
-  <div id="log" class="empty">
+  <div id="log" class="loading">
     <div id="log-inner">
+      <div class="loading-hero">
+        <span class="logo"></span>
+        <h2>Loading...</h2>
+      </div>
       <div class="empty-hero">
         <span class="logo"></span>
         <h2>Broker Portfolio Agent</h2>
