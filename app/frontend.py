@@ -101,6 +101,14 @@ PAGE = r"""<!DOCTYPE html>
     </div>
   </div>
 </main>
+<script>
+// Without a thread id in the URL there is nothing to restore, so skip "Loading..."
+// (same id check as getStoredThread in app.js).
+(function () {
+  var t = new URLSearchParams(location.search).get("thread_id");
+  if (!t || !/^[\w-]+$/.test(t)) document.getElementById("log").className = "empty";
+})();
+</script>
 <footer>
   <div id="input-card">
     <input id="input" type="text" placeholder="Ask about your portfolio..." autocomplete="off">

@@ -151,8 +151,23 @@ function addConfirm(text) {
     div.appendChild(actions);
 }
 
+// The id lives in the URL so a reload or a shared link reopens the same
+// conversation. It is interpolated into request paths, so anything but a
+// plain id is ignored.
+function getStoredThread() {
+    const id = new URLSearchParams(location.search).get("thread_id");
+    return id && /^[\w-]+$/.test(id) ? id : null;
+}
+
+function storeThread(id) {
+    const url = new URL(location.href);
+    if (id) url.searchParams.set("thread_id", id);
+    else url.searchParams.delete("thread_id");
+    history.replaceState(null, "", url);
+}
+
 async function ensureThread() {
-    const stored = sessionStorage.getItem("thread_id");
+    const stored = getStoredThread();
     if (stored) {
         threadId = stored;
         return;
@@ -164,7 +179,7 @@ async function ensureThread() {
     });
     const data = await res.json();
     threadId = data.thread_id;
-    sessionStorage.setItem("thread_id", threadId);
+    storeThread(threadId);
 }
 
 // The server keeps thread records in memory, so after a restart a stored id
@@ -306,7 +321,7 @@ async function sendMessage(text) {
             } else {
                 // Recreating failed (e.g. Atlas unreachable): fall back to a
                 // fresh thread, where a resume no longer makes sense.
-                sessionStorage.removeItem("thread_id");
+                storeThread(null);
                 threadId = null;
                 pendingInterrupt = false;
                 status.textContent = "Starting a new conversation...";
@@ -371,11 +386,8 @@ function renderThreadState(state) {
 // thread's state, and if a run is still in flight, show "Thinking..." and
 // join its stream so the reply lands in this page when it finishes.
 async function restoreThread() {
-    const stored = sessionStorage.getItem("thread_id");
-    if (!stored) {
-        await ensureThread();
-        return;
-    }
+    const stored = getStoredThread();
+    if (!stored) return;
     threadId = stored;
     busy = true;
     sendBtn.disabled = true;
@@ -386,7 +398,7 @@ async function restoreThread() {
             if (await recreateThread(threadId)) {
                 stateRes = await fetch(`/threads/${threadId}/state`);
             } else {
-                sessionStorage.removeItem("thread_id");
+                storeThread(null);
                 threadId = null;
                 await ensureThread();
                 return;
@@ -434,17 +446,19 @@ function showEmptyHero() {
 }
 
 resetBtn.onclick = () => {
-    sessionStorage.removeItem("thread_id");
+    storeThread(null);
     threadId = null;
     pendingInterrupt = false;
     showEmptyHero();
 };
 
-// The page starts in "loading" (see frontend.py) rather than showing the
-// welcome screen, since an empty log may just mean the stored thread's history
-// hasn't arrived yet (a suspended VM waking, or a thread recreated after a
-// restart). Once the first restore settles, show the welcome screen only if
-// nothing was rendered; a run being re-joined has already rendered its history.
+// With a thread id in the URL the page starts in "loading" (see frontend.py)
+// rather than the welcome screen, since an empty log may just mean the
+// thread's history hasn't arrived yet (a suspended VM waking, or a thread
+// recreated after a restart). Without one, frontend.py already shows the
+// welcome screen and no thread is created until the first message. Once the
+// first restore settles, show the welcome screen only if nothing was rendered;
+// a run being re-joined has already rendered its history.
 restoreThread().finally(() => {
     log.classList.remove("loading");
     if (!logInner.querySelector(".msg")) showEmptyHero();
