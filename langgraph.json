@@ -3,6 +3,9 @@
   "graphs": {
     "agent": "./app/agent.py:platform_graph"
   },
+  "checkpointer": {
+    "path": "./app/checkpointer.py:mongo_checkpointer"
+  },
   "http": {
     "app": "./app/frontend.py:app"
   },

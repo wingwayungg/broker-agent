@@ -22,3 +22,5 @@ numpy>=2.0.0
 # runs in Atlas (see app/rag.py). 4.10+ for float32 BSON vectors.
 pymongo>=4.10
 langchain-text-splitters>=1.0.0
+# Chat-thread checkpoints in the same Atlas cluster (app/checkpointer.py)
+langgraph-checkpoint-mongodb>=0.5.1

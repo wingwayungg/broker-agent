@@ -167,6 +167,20 @@ async function ensureThread() {
     sessionStorage.setItem("thread_id", threadId);
 }
 
+// The server keeps thread records in memory, so after a restart a stored id
+// 404s even though its checkpoints are still in Atlas (app/checkpointer.py).
+// Recreating the record under the same id brings the history back. The
+// graph_id metadata is what a first run would have set; without it the state
+// endpoint can't tell which graph to read the checkpoint with and returns {}.
+async function recreateThread(id) {
+    const res = await fetch("/threads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: id, if_exists: "do_nothing", metadata: { graph_id: "agent" } }),
+    });
+    return res.ok;
+}
+
 // Splits a text/event-stream chunk buffer into individual "event:"/"data:"
 // records, tolerating records that arrive split across network reads.
 function parseSSEEvent(raw) {
@@ -283,17 +297,22 @@ async function sendMessage(text) {
         let res = await postRun(text, pendingInterrupt);
 
         if (res.status === 404) {
-            // The thread doesn't exist server-side anymore (e.g. the server
-            // restarted/redeployed since this tab last talked to it, wiping its
-            // in-memory threads). Start a fresh thread transparently and resend
-            // as a new message -- any pending confirmation from the old thread
-            // is gone regardless, so a resume no longer makes sense.
-            sessionStorage.removeItem("thread_id");
-            threadId = null;
-            pendingInterrupt = false;
-            status.textContent = "Starting a new conversation...";
-            await ensureThread();
-            res = await postRun(text, false);
+            // The server restarted since this tab last talked to it and lost
+            // the thread record. The history is still in Atlas, so recreate
+            // the record under the same id and resend; a pending confirmation
+            // is in the checkpoint too, so the resume stays valid.
+            if (await recreateThread(threadId)) {
+                res = await postRun(text, pendingInterrupt);
+            } else {
+                // Recreating failed (e.g. Atlas unreachable): fall back to a
+                // fresh thread, where a resume no longer makes sense.
+                sessionStorage.removeItem("thread_id");
+                threadId = null;
+                pendingInterrupt = false;
+                status.textContent = "Starting a new conversation...";
+                await ensureThread();
+                res = await postRun(text, false);
+            }
         }
 
         if (!res.ok || !res.body) {
@@ -362,12 +381,16 @@ async function restoreThread() {
     sendBtn.disabled = true;
     input.disabled = true;
     try {
-        const stateRes = await fetch(`/threads/${threadId}/state`);
+        let stateRes = await fetch(`/threads/${threadId}/state`);
         if (stateRes.status === 404) {
-            sessionStorage.removeItem("thread_id");
-            threadId = null;
-            await ensureThread();
-            return;
+            if (await recreateThread(threadId)) {
+                stateRes = await fetch(`/threads/${threadId}/state`);
+            } else {
+                sessionStorage.removeItem("thread_id");
+                threadId = null;
+                await ensureThread();
+                return;
+            }
         }
         if (!stateRes.ok) return;
         renderThreadState(await stateRes.json());

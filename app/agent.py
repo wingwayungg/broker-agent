@@ -111,10 +111,8 @@ def build_agent():
     # persistent checkpointer (e.g. SqliteSaver) if you want sessions to
     # survive a restart. This checkpointer only serves the in-process path
     # (`ask()` in local_api_cli/session.py, and the notebooks); the
-    # LangGraph API path uses `platform_graph` and its own store instead.
-    # That store has the same caveat in prod: `langgraph dev` pickles it to
-    # .langgraph_api/, which survives a local restart but not a server
-    # restart or free-tier spin-down (ephemeral filesystem).
+    # LangGraph API path uses `platform_graph`, whose checkpoints go to Atlas
+    # through app/checkpointer.py instead.
     checkpointer = MemorySaver()
     return _build_graph().compile(checkpointer=checkpointer)
 
