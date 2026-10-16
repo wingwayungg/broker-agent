@@ -1,5 +1,7 @@
 venv/
 web/node_modules/
+# Built in the Dockerfile's web stage; never ship a local build.
+app/static/app.js
 .venv/
 env/
 .git/
