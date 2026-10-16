@@ -1,16 +1,8 @@
-import { memo, useEffect, useEffectEvent, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { messageBody, ticketParts } from "../../app/static/render.js";
 import type { InterruptValue } from "../../app/static/render.js";
-import {
-    consumeStream,
-    createThread,
-    fetchState,
-    joinRun,
-    postRun,
-    recreateThread,
-    storeThread,
-} from "./api";
+import { consumeStream, createThread, fetchState, joinRun, postRun, recreateThread, storeThread } from "./api";
 import type { ThreadState } from "./api";
 
 // The page's static parts, which frontend.py renders and React only wires up:
@@ -31,16 +23,9 @@ export interface Bootstrap {
     interrupt: InterruptValue | null;
 }
 
-type Item =
-    | { key: number; kind: "user" | "assistant" | "status" | "error"; text: string }
-    | { key: number; kind: "ticket"; value: InterruptValue; answered: boolean };
+type Item = { key: number; kind: "user" | "assistant" | "status" | "error"; text: string } | { key: number; kind: "ticket"; value: InterruptValue; answered: boolean };
 
-type Action =
-    | { type: "append"; item: Item }
-    | { type: "text"; key: number; text: string }
-    | { type: "replace"; key: number; item: Item | null }
-    | { type: "answer"; key: number }
-    | { type: "load"; items: Item[] };
+type Action = { type: "append"; item: Item } | { type: "text"; key: number; text: string } | { type: "replace"; key: number; item: Item | null } | { type: "answer"; key: number } | { type: "load"; items: Item[] };
 
 let lastKey = 0;
 const nextKey = () => ++lastKey;
@@ -257,24 +242,21 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         // Mount only: the bootstrap is fixed for the page's lifetime.
     }, []);
 
-    function reset() {
-        storeThread(null);
-        session.current.threadId = null;
-        session.current.pendingInterrupt = false;
-        dispatch({ type: "load", items: [] });
-    }
-
-    const onSend = useEffectEvent(() => sendMessage(shell.input.value.trim()));
-    const onKeyDown = useEffectEvent((e: KeyboardEvent) => {
-        if (e.key === "Enter") sendMessage(shell.input.value.trim());
-    });
-    const onSuggestion = useEffectEvent((e: Event) => {
-        const btn = (e.target as Element).closest("button");
-        if (btn) sendMessage(btn.textContent!);
-    });
-    const onReset = useEffectEvent(reset);
-
     useEffect(() => {
+        const onSend = () => sendMessage(shell.input.value.trim());
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Enter") sendMessage(shell.input.value.trim());
+        };
+        const onSuggestion = (e: Event) => {
+            const btn = (e.target as Element).closest("button");
+            if (btn) sendMessage(btn.textContent!);
+        };
+        const onReset = () => {
+            storeThread(null);
+            session.current.threadId = null;
+            session.current.pendingInterrupt = false;
+            dispatch({ type: "load", items: [] });
+        };
         const listeners: [HTMLElement, string, (e: any) => void][] = [
             [shell.send, "click", onSend],
             [shell.input, "keydown", onKeyDown],
@@ -287,11 +269,5 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         };
     }, []);
 
-    return items.map((item) =>
-        item.kind === "ticket" ? (
-            <Ticket key={item.key} item={item} onReply={answerTicket} />
-        ) : (
-            <Message key={item.key} item={item} />
-        ),
-    );
+    return items.map((item) => (item.kind === "ticket" ? <Ticket key={item.key} item={item} onReply={answerTicket} /> : <Message key={item.key} item={item} />));
 }
