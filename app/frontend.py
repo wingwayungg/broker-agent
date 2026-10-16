@@ -20,6 +20,11 @@ already rendered, so it paints without waiting on app.js. The server renders it
 by running static/render.js in V8, the same code the page uses for streamed
 replies, so there is one renderer rather than a Python port to keep in sync.
 app.js joins a still-running run itself rather than the response staying open.
+
+app.js is a React bundle built from web/ (render.js is bundled into it). The page
+itself is static and stays server-owned; React owns only #messages, re-rendering
+the same markup from the messages in #bootstrap, and wires up the rest (the input,
+buttons and #log's empty state) without rendering it.
 """
 
 import asyncio
@@ -41,13 +46,20 @@ from starlette.staticfiles import StaticFiles
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-# Content hashes appended as cache-busting query params, so the files can be
-# cached as immutable (see _VersionedStatic) without a stale one surviving a
-# deploy that changes it.
-_APP_JS_VERSION, _RENDER_JS_VERSION, _STYLE_CSS_VERSION = (
-    hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:8]
-    for name in ("app.js", "render.js", "style.css")
-)
+
+def _version(name: str) -> str:
+    """A content hash appended as a cache-busting query param, so the file can be
+    cached as immutable (see _VersionedStatic) without a stale one surviving a
+    deploy that changes it.
+
+    app.js is build output (web/), which the Docker image always has; tolerating
+    its absence lets the Python tests run without Node.
+    """
+    path = STATIC_DIR / name
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:8] if path.exists() else "missing"
+
+
+_APP_JS_VERSION, _STYLE_CSS_VERSION = _version("app.js"), _version("style.css")
 
 # 3-candlestick mark (irregular heights, mixed hollow/solid bodies). Inline
 # (stroke/fill="currentColor") for the in-page logo so it follows --accent;
@@ -95,7 +107,6 @@ PAGE = r"""<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=__STYLE_CSS_VERSION__">
-<script src="/static/render.js?v=__RENDER_JS_VERSION__" defer></script>
 <script src="/static/app.js?v=__APP_JS_VERSION__" defer></script>
 </head>
 <body>
@@ -120,6 +131,7 @@ PAGE = r"""<!DOCTYPE html>
           <button type="button">Risks in Apple's latest 10-K</button>
         </div>
       </div>
+      <div id="messages"></div>
     </div>
   </div>
 </main>
@@ -135,7 +147,6 @@ __THREAD__</body>
 PAGE = (
     PAGE.replace("__FAVICON_HREF__", FAVICON_HREF)
     .replace("__APP_JS_VERSION__", _APP_JS_VERSION)
-    .replace("__RENDER_JS_VERSION__", _RENDER_JS_VERSION)
     .replace("__STYLE_CSS_VERSION__", _STYLE_CSS_VERSION)
     .replace('<span class="logo"></span>', LOGO_SVG)
 )
@@ -147,7 +158,7 @@ PAGE_EMPTY = PAGE_HEAD.replace("__LOG_CLASS__", "empty") + PAGE_TAIL
 # The history arrives after the footer has been sent, so it comes in a <template>
 # that this moves into the log as soon as it is parsed, before app.js runs.
 _SHOW_THREAD = (
-    '<script>document.getElementById("log-inner").append(document.getElementById("thread").content);'
+    '<script>document.getElementById("messages").append(document.getElementById("thread").content);'
     'document.getElementById("log").className = "";'
     'document.getElementById("reset").classList.remove("hidden");</script>'
 )
@@ -167,7 +178,8 @@ def _thread_html(messages: list[dict], interrupt: dict | None) -> str:
 
 
 async def _read_thread(thread_id: str) -> tuple[str, dict] | None:
-    """The thread's log HTML and app.js's bootstrap data, or None if there is nothing to restore.
+    """The thread's log HTML and app.js's bootstrap data (the same messages, for React to
+    take the log over from), or None if there is nothing to restore.
 
     Run status is read before state, so a run finishing in between isn't missed.
     """
@@ -197,8 +209,9 @@ async def _read_thread(thread_id: str) -> tuple[str, dict] | None:
         return None
     bootstrap = {
         "thread_id": thread_id,
-        "pending_interrupt": bool(interrupts),
         "active_run_id": active_run_id,
+        "messages": messages,
+        "interrupt": interrupt,
     }
     return html, bootstrap
 

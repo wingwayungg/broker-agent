@@ -29,3 +29,7 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Frontend (app/static/app.js is built from web/)
+web/node_modules/
+app/static/app.js

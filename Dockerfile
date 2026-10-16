@@ -1,3 +1,16 @@
+# The page's React bundle (app/static/app.js), built from web/ with render.js
+# bundled in. Node stays in this stage, so the final image is Python-only.
+FROM node:24-slim AS web
+RUN corepack enable
+# Corepack picks the pnpm version from the package.json in the working
+# directory (not pnpm's -C), so run from web/ or it fetches the latest pnpm.
+WORKDIR /src/web
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+COPY app/static/render.js app/static/render.d.ts /src/app/static/
+RUN pnpm build
+
 FROM python:3.14-slim
 
 WORKDIR /app
@@ -22,6 +35,7 @@ RUN python -c "from model2vec import StaticModel; \
 ENV EMBEDDING_MODEL=/models/${EMBEDDING_MODEL} HF_HUB_OFFLINE=1
 
 COPY . .
+COPY --from=web /src/app/static/app.js app/static/app.js
 
 EXPOSE 2024
 

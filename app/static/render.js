@@ -1,6 +1,8 @@
-// Pure functions from text to HTML strings, shared by the page (app.js) and the
-// server, which runs this file in V8 to render a thread's history into the
-// page it serves (app/frontend.py) -- so both always produce the same markup.
+// Pure functions from text to HTML strings, shared by the page (bundled into
+// app.js from web/) and the server, which runs this file in V8 to render a
+// thread's history into the page it serves (app/frontend.py) -- so both always
+// produce the same markup. The page's React components own each bubble's
+// element and render its inner HTML from messageBody/ticketParts.
 
 // Minimal GFM-ish markdown renderer for assistant replies: paragraphs,
 // bold/italic/code, lists, and (the main point) tables, so a markdown
@@ -130,22 +132,28 @@ function renderMarkdown(text) {
     return html;
 }
 
+function messageBody(text, cls) {
+    return cls === "assistant" ? renderMarkdown(text) : escapeHtml(text);
+}
+
 function messageHtml(text, cls) {
-    const body = cls === "assistant" ? renderMarkdown(text) : escapeHtml(text);
-    return `<div class="msg ${cls}">${body}</div>`;
+    return `<div class="msg ${cls}">${messageBody(text, cls)}</div>`;
 }
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-// buy_stock's interrupt payload as an order ticket. A payload without order
-// fields falls back to its plain message.
-function ticketHtml(value) {
+// buy_stock's interrupt payload as an order ticket: the bubble's class and inner
+// HTML. A payload without order fields falls back to its plain message. An
+// answered ticket's buttons are disabled so it can't later send "yes" as a
+// fresh message.
+function ticketParts(value, answered) {
     const isFinal = value.step === value.of;
+    const disabled = answered ? " disabled" : "";
     const actions =
         '<div class="confirm-actions">' +
-        `<button class="primary" type="button" data-reply="yes">${isFinal ? "Place order" : "Continue"}</button>` +
-        '<button type="button" data-reply="no">Cancel</button></div>';
-    if (!value.symbol) return `<div class="msg confirm">${escapeHtml(value.message || "")}${actions}</div>`;
+        `<button class="primary" type="button" data-reply="yes"${disabled}>${isFinal ? "Place order" : "Continue"}</button>` +
+        `<button type="button" data-reply="no"${disabled}>Cancel</button></div>`;
+    if (!value.symbol) return { cls: "msg confirm", body: escapeHtml(value.message || "") + actions };
     const shares = value.quantity === 1 ? "1 share" : `${value.quantity} shares`;
     const price =
         value.estimated_price == null
@@ -153,13 +161,18 @@ function ticketHtml(value) {
             : `<dl><dt>Est. price</dt><dd>${usd.format(value.estimated_price)}</dd>` +
               `<dt>Est. cost</dt><dd>${usd.format(value.estimated_cost)}</dd></dl>`;
     const warning = isFinal ? '<p class="ticket-warning">This submits the order and can\'t be undone.</p>' : "";
-    return (
-        '<div class="msg ticket"><div class="ticket-head">' +
+    const body =
+        '<div class="ticket-head">' +
         `<span>${isFinal ? "Final confirmation" : "Confirm buy order"}</span><span>Step ${value.step} of ${value.of}</span></div>` +
         '<div class="ticket-body"><div class="ticket-order">' +
         `<span class="ticket-symbol">${escapeHtml(value.symbol)}</span><span class="ticket-qty">${shares}</span></div>` +
-        `${price}${warning}${actions}</div></div>`
-    );
+        `${price}${warning}${actions}</div>`;
+    return { cls: "msg ticket", body };
+}
+
+function ticketHtml(value) {
+    const { cls, body } = ticketParts(value, false);
+    return `<div class="${cls}">${body}</div>`;
 }
 
 // The visible part of a thread: human messages and assistant replies with text
@@ -172,3 +185,7 @@ function threadHtml(messages, interrupt) {
     }
     return interrupt ? html + ticketHtml(interrupt) : html;
 }
+
+// The server evals this as a classic script, where `module` is undefined; the
+// web/ bundle imports it as CommonJS.
+if (typeof module !== "undefined") module.exports = { messageBody, ticketParts };

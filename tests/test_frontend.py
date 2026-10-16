@@ -98,9 +98,15 @@ def test_thread_page_streams_shell_then_visible_messages(get):
     assert "AAPL 10 @ 150" not in log
     assert _bootstrap(res) == {
         "thread_id": THREAD_ID,
-        "pending_interrupt": False,
         "active_run_id": None,
+        "messages": [
+            {"type": "human", "content": "Show my positions"},
+            {"type": "ai", "content": ""},
+            {"type": "ai", "content": "You hold **AAPL**. </script>"},
+        ],
+        "interrupt": None,
     }
+    assert '</script>"' not in res.text
 
 
 def test_lost_thread_record_is_recreated(get):
@@ -123,7 +129,7 @@ def test_paused_order_renders_its_ticket(get):
     }
     runs = [{"run_id": "run-1", "status": "running"}]
     res = get(FakeClient(runs=runs, interrupts=[{"value": value}]))
-    assert _bootstrap(res)["pending_interrupt"] is True
+    assert _bootstrap(res)["interrupt"] == value
     assert _bootstrap(res)["active_run_id"] == "run-1"
     ticket = _log(res).split('<div class="msg ticket">')[1]
     for part in [
@@ -149,7 +155,7 @@ def test_empty_thread_shows_only_while_its_first_run_is_live(get):
 
 
 def test_versioned_static_files_are_cached_as_immutable():
-    res = TestClient(frontend.app).get(f"/static/app.js?v={frontend._APP_JS_VERSION}")
+    res = TestClient(frontend.app).get(f"/static/style.css?v={frontend._STYLE_CSS_VERSION}")
     assert res.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 

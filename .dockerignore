@@ -1,4 +1,5 @@
 venv/
+web/node_modules/
 .venv/
 env/
 .git/

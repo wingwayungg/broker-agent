@@ -142,6 +142,11 @@ main {
   flex: 1;
 }
 
+/* React's root (web/src/main.tsx); bubbles stay #log-inner's flex items. */
+#messages {
+  display: contents;
+}
+
 #log.empty #log-inner,
 #log.loading #log-inner {
   justify-content: center;
