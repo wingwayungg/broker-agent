@@ -210,15 +210,7 @@ function addConfirm(value) {
 }
 
 // The id lives in the URL so a reload or a shared link reopens the same
-// conversation. The API only accepts UUIDs (422 otherwise) and the id is
-// interpolated into request paths, so anything else is dropped.
-function getStoredThread() {
-    const id = new URLSearchParams(location.search).get("thread_id");
-    if (id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return id;
-    if (id !== null) storeThread(null);
-    return null;
-}
-
+// conversation; frontend.py redirects a malformed or unknown one to "/".
 function storeThread(id) {
     const url = new URL(location.href);
     if (id) url.searchParams.set("thread_id", id);
@@ -227,11 +219,7 @@ function storeThread(id) {
 }
 
 async function ensureThread() {
-    const stored = getStoredThread();
-    if (stored) {
-        threadId = stored;
-        return;
-    }
+    if (threadId) return;
     const res = await fetch("/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -332,8 +320,9 @@ async function consumeStream(res, status) {
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        // Server sends CRLF line endings; normalize before boundary-matching.
-        buf += decoder.decode(value, { stream: true }).replaceAll("\r\n", "\n");
+        // Server sends CRLF line endings; normalize the whole buffer, since a
+        // read can end between \r and \n.
+        buf = (buf + decoder.decode(value, { stream: true })).replaceAll("\r\n", "\n");
         let idx;
         while ((idx = buf.indexOf("\n\n")) !== -1) {
             const record = parseSSEEvent(buf.slice(0, idx));
@@ -451,59 +440,29 @@ function renderThreadState(state) {
         if (msg.type === "human") addMsg(msg.content, "user");
         else if (msg.type === "ai" && msg.content) addMsg(msg.content, "assistant");
     }
-    const interrupt = state.interrupts?.[0] || state.tasks?.flatMap((t) => t.interrupts || [])[0];
+    const interrupt = state.interrupts?.[0];
     pendingInterrupt = Boolean(interrupt);
     if (interrupt) addConfirm(interrupt.value);
 }
 
-// The log lives only in the DOM, so any reload (a manual refresh, Chrome
-// discarding a background tab while a slow research call runs, pull-to-
-// refresh on mobile) used to leave the page blank even though the thread
-// and its run were still alive on the server. Rebuild the log from the
-// thread's state, and if a run is still in flight, show "Thinking..." and
-// join its stream so the reply lands in this page when it finishes.
+// frontend.py inlines the thread's history (see its docstring). A run still in
+// flight is joined here, and since joining only delivers events emitted after
+// connecting, the log is re-rendered from state once it finishes.
 async function restoreThread() {
-    const stored = getStoredThread();
-    if (!stored) return;
-    threadId = stored;
+    const bootstrap = document.getElementById("bootstrap");
+    if (!bootstrap) return;
+    const { thread_id, state, active_run_id } = JSON.parse(bootstrap.textContent);
+    threadId = thread_id;
+    renderThreadState(state);
+    if (!active_run_id) return;
     busy = true;
     sendBtn.disabled = true;
     input.disabled = true;
     try {
-        let stateRes = await fetch(`/threads/${threadId}/state`);
-        if (stateRes.status === 404) {
-            if (await recreateThread(threadId)) {
-                stateRes = await fetch(`/threads/${threadId}/state`);
-            } else {
-                storeThread(null);
-                threadId = null;
-                await ensureThread();
-                return;
-            }
-        }
-        if (!stateRes.ok) return;
-        renderThreadState(await stateRes.json());
-
-        const runsRes = await fetch(`/threads/${threadId}/runs?limit=1`);
-        if (!runsRes.ok) return;
-        const latest = (await runsRes.json())[0];
-        if (!latest || !["pending", "running"].includes(latest.status)) {
-            // An id is only written to the URL once a message is sent, so an
-            // idle thread with no history is an id the server never saw (the
-            // recreate above just made it an empty record).
-            if (!logInner.querySelector(".msg")) {
-                storeThread(null);
-                threadId = null;
-            }
-            return;
-        }
-
         const status = addMsg("Thinking", "system pending");
         const modes = encodeURIComponent(JSON.stringify(STREAM_MODES));
-        const joinRes = await fetch(`/threads/${threadId}/runs/${latest.run_id}/stream?stream_mode=${modes}`);
+        const joinRes = await fetch(`/threads/${threadId}/runs/${active_run_id}/stream?stream_mode=${modes}`);
         if (joinRes.ok && joinRes.body) await consumeStream(joinRes, status);
-        // Joining only delivers events emitted after we connected; the state
-        // is authoritative for whatever streamed before the reload.
         const finalRes = await fetch(`/threads/${threadId}/state`);
         if (finalRes.ok) renderThreadState(await finalRes.json());
         else status.remove();
@@ -542,13 +501,9 @@ resetBtn.onclick = () => {
     showEmptyHero();
 };
 
-// With a thread id in the URL the page starts in "loading" (see frontend.py)
-// rather than the welcome screen, since an empty log may just mean the
-// thread's history hasn't arrived yet (a suspended VM waking, or a thread
-// recreated after a restart). Without one, frontend.py already shows the
-// welcome screen and no thread is created until the first message. Once the
-// first restore settles, show the welcome screen only if nothing was rendered;
-// a run being re-joined has already rendered its history.
+// A thread page starts in "loading" so it never flashes the welcome screen
+// before its history renders; a thread re-joined before its first message
+// checkpoint can still end up empty.
 restoreThread().finally(() => {
     log.classList.remove("loading");
     if (!logInner.querySelector(".msg")) showEmptyHero();

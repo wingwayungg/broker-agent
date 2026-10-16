@@ -12,16 +12,24 @@ That matters for buy_stock's two-step confirmation: the API distinguishes a
 fresh message (input) from a resume (command.resume) as separate request
 fields, so the page can know from the previous response's __interrupt__
 field which one to send next, instead of guessing at plain text the way
-ask() does. On load the page rebuilds its log from the thread's state (and
-re-joins a still-running run), so a reload mid-reply doesn't blank it.
+ask() does.
+
+A ?thread_id= page inlines the thread's history as JSON, so reopening a link is
+one round trip; app.js renders it with the same renderer as streamed replies,
+and joins a still-running run itself rather than the response staying open.
 """
 
 import hashlib
+import json
+import re
+from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote
 
+from langgraph_sdk import get_client
+from langgraph_sdk.errors import APIError, NotFoundError
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -88,7 +96,7 @@ PAGE = r"""<!DOCTYPE html>
   <button id="reset" class="hidden">New conversation</button>
 </header>
 <main>
-  <div id="log" class="loading">
+  <div id="log" class="__LOG_CLASS__">
     <div id="log-inner">
       <div class="loading-hero">
         <span class="logo"></span>
@@ -107,21 +115,13 @@ PAGE = r"""<!DOCTYPE html>
     </div>
   </div>
 </main>
-<script>
-// Without a thread id in the URL there is nothing to restore, so skip "Loading..."
-// (same id check as getStoredThread in app.js).
-(function () {
-  var t = new URLSearchParams(location.search).get("thread_id");
-  if (!t || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) document.getElementById("log").className = "empty";
-})();
-</script>
 <footer>
   <div id="input-card">
     <input id="input" type="text" placeholder="Ask the AI assistant about your portfolio, a stock, or a 10-K..." autocomplete="off">
     <button id="send">Send</button>
   </div>
 </footer>
-<script src="/static/app.js?v=__APP_JS_VERSION__" defer></script>
+__BOOTSTRAP__<script src="/static/app.js?v=__APP_JS_VERSION__" defer></script>
 </body>
 </html>"""
 
@@ -133,8 +133,57 @@ PAGE = (
 )
 
 
-def index(_request):
-    return HTMLResponse(PAGE)
+PAGE_EMPTY = PAGE.replace("__LOG_CLASS__", "empty").replace("__BOOTSTRAP__", "")
+
+THREAD_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
+async def _thread_bootstrap(thread_id: str) -> dict | None:
+    """What renderThreadState in app.js needs, or None if there is nothing to restore.
+
+    Run status is read before state, so a run finishing in between isn't missed.
+    """
+    async with get_client() as client:
+        try:
+            runs = await client.runs.list(thread_id, limit=1)
+        except NotFoundError:
+            await client.threads.create(
+                thread_id=thread_id, if_exists="do_nothing", metadata={"graph_id": "agent"}
+            )
+            runs = []
+        state = await client.threads.get_state(thread_id)
+
+    # Tool results (filing excerpts) are never rendered, so they stay off the page.
+    messages = [
+        {"type": m["type"], "content": m["content"]}
+        for m in state["values"].get("messages", [])  # pyright: ignore[reportAttributeAccessIssue]
+        if m["type"] == "human" or (m["type"] == "ai" and m["content"])
+    ]
+    active_run_id = next((r["run_id"] for r in runs if r["status"] in ("pending", "running")), None)
+    if not messages and not active_run_id:
+        return None
+    return {
+        "thread_id": thread_id,
+        "state": {"values": {"messages": messages}, "interrupts": state["interrupts"]},
+        "active_run_id": active_run_id,
+    }
+
+
+async def index(request):
+    thread_id = request.query_params.get("thread_id")
+    if thread_id is None:
+        return HTMLResponse(PAGE_EMPTY)
+    bootstrap = None
+    if THREAD_ID_RE.fullmatch(thread_id):
+        with suppress(APIError):
+            bootstrap = await _thread_bootstrap(thread_id)
+    if bootstrap is None:
+        return RedirectResponse("/", status_code=307)
+    data = json.dumps(bootstrap).replace("<", "\\u003c")
+    page = PAGE.replace("__LOG_CLASS__", "loading").replace(
+        "__BOOTSTRAP__", f'<script id="bootstrap" type="application/json">{data}</script>\n'
+    )
+    return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
 
 # Exact-match Route for "/" plus a *prefixed* static mount. langgraph_api
