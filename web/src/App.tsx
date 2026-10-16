@@ -1,9 +1,11 @@
-import { memo, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
-import type { MouseEvent } from "react";
-import { messageBody, ticketParts } from "../../app/static/render.js";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import type { InterruptValue } from "../../app/static/render.js";
 import { consumeStream, createThread, fetchState, joinRun, postRun, recreateThread, storeThread } from "./api";
 import type { ThreadState } from "./api";
+import { Message } from "./Message";
+import type { TextItem } from "./Message";
+import { Ticket } from "./Ticket";
+import type { TicketItem } from "./Ticket";
 
 // The page's static parts, which frontend.py renders and React only wires up:
 // it toggles their state and listens to them, but never re-renders them.
@@ -23,7 +25,7 @@ export interface Bootstrap {
     interrupt: InterruptValue | null;
 }
 
-type Item = { key: number; kind: "user" | "assistant" | "status" | "error"; text: string } | { key: number; kind: "ticket"; value: InterruptValue; answered: boolean };
+type Item = TextItem | TicketItem;
 
 type Action = { type: "append"; item: Item } | { type: "text"; key: number; text: string } | { type: "replace"; key: number; item: Item | null } | { type: "answer"; key: number } | { type: "load"; items: Item[] };
 
@@ -65,29 +67,6 @@ function threadItems(messages: { type: string; content: string }[], interrupt: I
     }
     if (interrupt) items.push(ticketItem(interrupt));
     return items;
-}
-
-const CLASSES = { user: "msg user", assistant: "msg assistant", status: "msg system pending", error: "msg error" };
-
-type TextItem = Exclude<Item, { kind: "ticket" }>;
-type TicketItem = Extract<Item, { kind: "ticket" }>;
-
-// Memoized so a streaming reply re-renders only its own bubble's markdown.
-const Message = memo(function Message({ item }: { item: TextItem }) {
-    if (item.kind === "assistant") {
-        return <div className={CLASSES.assistant} dangerouslySetInnerHTML={{ __html: messageBody(item.text, "assistant") }} />;
-    }
-    return <div className={CLASSES[item.kind]}>{item.text}</div>;
-});
-
-function Ticket({ item, onReply }: { item: TicketItem; onReply: (key: number, reply: string) => void }) {
-    const { cls, body } = ticketParts(item.value, item.answered);
-    // The buttons are in render.js's HTML, so their clicks are caught here.
-    const onClick = (e: MouseEvent) => {
-        const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-reply]");
-        if (btn && !btn.disabled) onReply(item.key, btn.dataset.reply!);
-    };
-    return <div className={cls} onClick={onClick} dangerouslySetInnerHTML={{ __html: body }} />;
 }
 
 export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: Shell }) {
