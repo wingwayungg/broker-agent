@@ -383,6 +383,10 @@ matplotlib-inline==0.2.2
     # via
     #   ipykernel
     #   ipython
+mini-racer==0.14.1
+    # via
+    #   -c requirements.txt
+    #   -r requirements.in
 mistune==3.3.4
     # via nbconvert
 model2vec==0.10.0

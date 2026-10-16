@@ -76,46 +76,86 @@ def test_home_page_never_reads_a_thread(get):
     assert 'id="bootstrap"' not in res.text
 
 
-def test_thread_page_inlines_rendered_messages_only(get):
+def _log(res):
+    return res.text.split('<template id="thread">')[1].split("</template>")[0]
+
+
+def _clears_url(res):
+    return res.status_code == 200 and 'history.replaceState(null, "", "/")' in res.text
+
+
+def test_thread_page_streams_shell_then_visible_messages(get):
     res = get(FakeClient())
     assert res.headers["cache-control"] == "no-store"
     assert '<div id="log" class="loading">' in res.text
-    # The model's text can't close the bootstrap <script> early.
-    assert res.text.count("</script>") == 2
+    assert res.text.index("</footer>") < res.text.index('<template id="thread">')
+    assert frontend._SHOW_THREAD in res.text
+    log = _log(res)
+    assert '<div class="msg user">Show my positions</div>' in log
+    assert (
+        '<div class="msg assistant"><p>You hold <strong>AAPL</strong>. &lt;/script&gt;</p>' in log
+    )
+    assert "AAPL 10 @ 150" not in log
     assert _bootstrap(res) == {
         "thread_id": THREAD_ID,
-        "state": {"values": {"messages": [HISTORY[0], HISTORY[3]]}, "interrupts": []},
+        "pending_interrupt": False,
         "active_run_id": None,
     }
 
 
 def test_lost_thread_record_is_recreated(get):
     fake = FakeClient(runs_error=_error(NotFoundError, 404))
-    assert len(_bootstrap(get(fake))["state"]["values"]["messages"]) == 2
+    assert _log(get(fake)).count('class="msg ') == 2
     assert fake.created == [
         {"thread_id": THREAD_ID, "if_exists": "do_nothing", "metadata": {"graph_id": "agent"}}
     ]
 
 
-def test_paused_order_and_live_run_are_passed_to_the_page(get):
-    interrupt = {"value": {"type": "confirm_buy_order", "step": 1, "of": 2}}
+def test_paused_order_renders_its_ticket(get):
+    value = {
+        "step": 2,
+        "of": 2,
+        "symbol": "AAPL",
+        "quantity": 3.0,
+        "estimated_price": 1234.5,
+        "estimated_cost": 3703.5,
+        "message": "Place it?",
+    }
     runs = [{"run_id": "run-1", "status": "running"}]
-    data = _bootstrap(get(FakeClient(runs=runs, interrupts=[interrupt])))
-    assert (data["active_run_id"], data["state"]["interrupts"]) == ("run-1", [interrupt])
+    res = get(FakeClient(runs=runs, interrupts=[{"value": value}]))
+    assert _bootstrap(res)["pending_interrupt"] is True
+    assert _bootstrap(res)["active_run_id"] == "run-1"
+    ticket = _log(res).split('<div class="msg ticket">')[1]
+    for part in [
+        "Final confirmation",
+        "Step 2 of 2",
+        "3 shares",
+        "$1,234.50",
+        "$3,703.50",
+        "can't be undone",
+        'data-reply="yes">Place order',
+        'data-reply="no">Cancel',
+    ]:
+        assert part in ticket
 
 
 def test_empty_thread_shows_only_while_its_first_run_is_live(get):
-    assert _redirects_home(get(FakeClient(messages=[])))
+    res = get(FakeClient(messages=[]))
+    assert _clears_url(res) and 'id="bootstrap"' not in res.text
     runs = [{"run_id": "run-1", "status": "pending"}]
-    assert _bootstrap(get(FakeClient(messages=[], runs=runs)))["active_run_id"] == "run-1"
+    res = get(FakeClient(messages=[], runs=runs))
+    assert '<template id="thread">' not in res.text
+    assert _bootstrap(res)["active_run_id"] == "run-1"
 
 
-@pytest.mark.parametrize(
-    "thread_id, fake",
-    [
-        ("garbage", FakeClient(state_error=AssertionError())),
-        (THREAD_ID, FakeClient(state_error=_error(APIStatusError, 500))),
-    ],
-)
-def test_malformed_or_unreadable_thread_redirects_home(get, thread_id, fake):
-    assert _redirects_home(get(fake, thread_id))
+def test_versioned_static_files_are_cached_as_immutable():
+    res = TestClient(frontend.app).get(f"/static/app.js?v={frontend._APP_JS_VERSION}")
+    assert res.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_malformed_thread_id_redirects_home_without_reading(get):
+    assert _redirects_home(get(FakeClient(state_error=AssertionError()), "garbage"))
+
+
+def test_unreadable_thread_clears_the_url(get):
+    assert _clears_url(get(FakeClient(state_error=_error(APIStatusError, 500))))

@@ -14,34 +14,40 @@ fields, so the page can know from the previous response's __interrupt__
 field which one to send next, instead of guessing at plain text the way
 ask() does.
 
-A ?thread_id= page inlines the thread's history as JSON, so reopening a link is
-one round trip; app.js renders it with the same renderer as streamed replies,
-and joins a still-running run itself rather than the response staying open.
+A ?thread_id= page is streamed: the shell (showing "Loading...") goes out at
+once, and the thread's history follows in the same response once Atlas answers,
+already rendered, so it paints without waiting on app.js. The server renders it
+by running static/render.js in V8, the same code the page uses for streamed
+replies, so there is one renderer rather than a Python port to keep in sync.
+app.js joins a still-running run itself rather than the response staying open.
 """
 
+import asyncio
 import hashlib
 import json
 import re
 from contextlib import suppress
+from functools import cache
 from pathlib import Path
 from urllib.parse import quote
 
 from langgraph_sdk import get_client
 from langgraph_sdk.errors import APIError, NotFoundError
+from py_mini_racer import MiniRacer
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-# Content hashes appended as cache-busting query params, so browsers can cache
-# these files aggressively (via StaticFiles' Last-Modified/ETag) without
-# serving a stale one across deploys that change it -- see the
-# interrupt-payload note in the module docstring for why that matters for
-# app.js specifically.
-_APP_JS_VERSION = hashlib.sha256((STATIC_DIR / "app.js").read_bytes()).hexdigest()[:8]
-_STYLE_CSS_VERSION = hashlib.sha256((STATIC_DIR / "style.css").read_bytes()).hexdigest()[:8]
+# Content hashes appended as cache-busting query params, so the files can be
+# cached as immutable (see _VersionedStatic) without a stale one surviving a
+# deploy that changes it.
+_APP_JS_VERSION, _RENDER_JS_VERSION, _STYLE_CSS_VERSION = (
+    hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:8]
+    for name in ("app.js", "render.js", "style.css")
+)
 
 # 3-candlestick mark (irregular heights, mixed hollow/solid bodies). Inline
 # (stroke/fill="currentColor") for the in-page logo so it follows --accent;
@@ -89,6 +95,8 @@ PAGE = r"""<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=__STYLE_CSS_VERSION__">
+<script src="/static/render.js?v=__RENDER_JS_VERSION__" defer></script>
+<script src="/static/app.js?v=__APP_JS_VERSION__" defer></script>
 </head>
 <body>
 <header>
@@ -121,25 +129,45 @@ PAGE = r"""<!DOCTYPE html>
     <button id="send">Send</button>
   </div>
 </footer>
-__BOOTSTRAP__<script src="/static/app.js?v=__APP_JS_VERSION__" defer></script>
-</body>
+__THREAD__</body>
 </html>"""
 
 PAGE = (
     PAGE.replace("__FAVICON_HREF__", FAVICON_HREF)
     .replace("__APP_JS_VERSION__", _APP_JS_VERSION)
+    .replace("__RENDER_JS_VERSION__", _RENDER_JS_VERSION)
     .replace("__STYLE_CSS_VERSION__", _STYLE_CSS_VERSION)
     .replace('<span class="logo"></span>', LOGO_SVG)
 )
 
 
-PAGE_EMPTY = PAGE.replace("__LOG_CLASS__", "empty").replace("__BOOTSTRAP__", "")
+PAGE_HEAD, PAGE_TAIL = PAGE.split("__THREAD__")
+PAGE_EMPTY = PAGE_HEAD.replace("__LOG_CLASS__", "empty") + PAGE_TAIL
+
+# The history arrives after the footer has been sent, so it comes in a <template>
+# that this moves into the log as soon as it is parsed, before app.js runs.
+_SHOW_THREAD = (
+    '<script>document.getElementById("log-inner").append(document.getElementById("thread").content);'
+    'document.getElementById("log").className = "";'
+    'document.getElementById("reset").classList.remove("hidden");</script>'
+)
 
 THREAD_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
-async def _thread_bootstrap(thread_id: str) -> dict | None:
-    """What renderThreadState in app.js needs, or None if there is nothing to restore.
+@cache
+def _renderer() -> MiniRacer:
+    js = MiniRacer()
+    js.eval((STATIC_DIR / "render.js").read_text())
+    return js
+
+
+def _thread_html(messages: list[dict], interrupt: dict | None) -> str:
+    return str(_renderer().call("threadHtml", messages, interrupt))
+
+
+async def _read_thread(thread_id: str) -> tuple[str, dict] | None:
+    """The thread's log HTML and app.js's bootstrap data, or None if there is nothing to restore.
 
     Run status is read before state, so a run finishing in between isn't missed.
     """
@@ -153,37 +181,67 @@ async def _thread_bootstrap(thread_id: str) -> dict | None:
             runs = []
         state = await client.threads.get_state(thread_id)
 
-    # Tool results (filing excerpts) are never rendered, so they stay off the page.
+    # Tool results (filing excerpts) are never rendered, so they don't go to V8.
     messages = [
         {"type": m["type"], "content": m["content"]}
         for m in state["values"].get("messages", [])  # pyright: ignore[reportAttributeAccessIssue]
-        if m["type"] == "human" or (m["type"] == "ai" and m["content"])
+        if m["type"] in ("human", "ai")
     ]
+    interrupts = state["interrupts"]
+    # Off the event loop: mini-racer binds to a loop running where it is created
+    # (TestClient runs one per client), and otherwise starts its own.
+    interrupt = interrupts[0]["value"] if interrupts else None
+    html = await asyncio.to_thread(_thread_html, messages, interrupt)
     active_run_id = next((r["run_id"] for r in runs if r["status"] in ("pending", "running")), None)
-    if not messages and not active_run_id:
+    if not html and not active_run_id:
         return None
-    return {
+    bootstrap = {
         "thread_id": thread_id,
-        "state": {"values": {"messages": messages}, "interrupts": state["interrupts"]},
+        "pending_interrupt": bool(interrupts),
         "active_run_id": active_run_id,
     }
+    return html, bootstrap
+
+
+async def _stream_thread(thread_id: str):
+    yield PAGE_HEAD.replace("__LOG_CLASS__", "loading")
+    thread = None
+    with suppress(APIError):
+        thread = await _read_thread(thread_id)
+    if thread is None:
+        # Too late to redirect; without a bootstrap app.js shows the welcome screen.
+        yield '<script>history.replaceState(null, "", "/")</script>'
+    else:
+        html, bootstrap = thread
+        if html:
+            yield f'<template id="thread">{html}</template>{_SHOW_THREAD}'
+        data = json.dumps(bootstrap).replace("<", "\\u003c")
+        yield f'<script id="bootstrap" type="application/json">{data}</script>'
+    yield PAGE_TAIL
 
 
 async def index(request):
     thread_id = request.query_params.get("thread_id")
     if thread_id is None:
         return HTMLResponse(PAGE_EMPTY)
-    bootstrap = None
-    if THREAD_ID_RE.fullmatch(thread_id):
-        with suppress(APIError):
-            bootstrap = await _thread_bootstrap(thread_id)
-    if bootstrap is None:
+    if not THREAD_ID_RE.fullmatch(thread_id):
         return RedirectResponse("/", status_code=307)
-    data = json.dumps(bootstrap).replace("<", "\\u003c")
-    page = PAGE.replace("__LOG_CLASS__", "loading").replace(
-        "__BOOTSTRAP__", f'<script id="bootstrap" type="application/json">{data}</script>\n'
+    return StreamingResponse(
+        _stream_thread(thread_id), media_type="text/html", headers={"Cache-Control": "no-store"}
     )
-    return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+
+class _VersionedStatic(StaticFiles):
+    """Every page reference carries a ?v= content hash, so a cached copy is never stale.
+
+    Without a Cache-Control header browsers guess freshness from Last-Modified, which
+    right after a deploy means re-checking app.js and style.css with Fly on each load.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 # Exact-match Route for "/" plus a *prefixed* static mount. langgraph_api
@@ -192,6 +250,6 @@ async def index(request):
 app = Starlette(
     routes=[
         Route("/", index, methods=["GET"]),
-        Mount("/static", StaticFiles(directory=STATIC_DIR), name="static"),
+        Mount("/static", _VersionedStatic(directory=STATIC_DIR), name="static"),
     ]
 )

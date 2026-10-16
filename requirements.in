@@ -34,3 +34,6 @@ langgraph-checkpoint-mongodb~=0.5.1
 cryptography<49
 # AES for those checkpoints (LANGGRAPH_AES_KEY), see app/checkpointer.py
 pycryptodome~=4.0
+# V8, so the server renders thread history with app/static/render.js, the same
+# code the page uses, rather than a Python port of it (app/frontend.py).
+mini-racer~=0.14.1

@@ -10,134 +10,6 @@ const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const resetBtn = document.getElementById("reset");
 
-// Minimal GFM-ish markdown renderer for assistant replies: paragraphs,
-// bold/italic/code, lists, and (the main point) tables, so a markdown
-// table from the model renders as an actual <table> like agentchat's UI
-// instead of raw pipe characters. Deliberately hand-rolled rather than a
-// CDN markdown library, since this page has no other external script
-// dependency and the surface area we need is small.
-function escapeHtml(s) {
-    return s.replace(/&/g, "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-}
-
-function inlineMd(s) {
-    // Same rewrite as normalize_citations in app/tools.py, applied here too
-    // because streamed tokens reach the page before call_model returns.
-    s = escapeHtml(s).replace(/【(\d+)(?:†[^】]*)?】/g, "[$1]");
-    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
-    return s;
-}
-
-function splitRow(line) {
-    return line
-        .trim()
-        .replace(/^\||\|$/g, "")
-        .split("|")
-        .map((c) => c.trim());
-}
-
-const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/;
-
-const NUMERIC_CELL_RE = /^[+\-−]?\$?[+\-−]?[\d,]+(\.\d+)?%?$/;
-
-function cellValue(cell) {
-    return cell.replace(/\*\*|\*/g, "").trim();
-}
-
-// Columns the model left unaligned (a bare ---) are right-aligned when every
-// body cell is a figure, so prices and P&L line up on the decimal.
-function tableToHtml(lines) {
-    const header = splitRow(lines[0]);
-    const rows = lines.slice(2).map(splitRow);
-    const aligns = splitRow(lines[1]).map((cell, col) => {
-        const left = cell.startsWith(":");
-        const right = cell.endsWith(":");
-        if (left && right) return "center";
-        if (right) return "right";
-        if (left) return "left";
-        const values = rows.map((r) => cellValue(r[col] || "")).filter((v) => v && !/^([-–—]|n\/a)$/i.test(v));
-        return values.length && values.every((v) => NUMERIC_CELL_RE.test(v)) ? "right" : "left";
-    });
-    const signClass = (cell) => {
-        const v = cellValue(cell);
-        if (!NUMERIC_CELL_RE.test(v)) return "";
-        if (/^\$?\+/.test(v)) return ' class="gain"';
-        if (/^\$?[-−]/.test(v)) return ' class="loss"';
-        return "";
-    };
-    let html = '<div class="table-wrap"><table><thead><tr>';
-    header.forEach((h, i) => {
-        html += `<th style="text-align:${aligns[i] || "left"}">${inlineMd(h)}</th>`;
-    });
-    html += "</tr></thead><tbody>";
-    rows.forEach((row) => {
-        html += "<tr>";
-        row.forEach((c, i) => {
-            html += `<td${signClass(c)} style="text-align:${aligns[i] || "left"}">${inlineMd(c)}</td>`;
-        });
-        html += "</tr>";
-    });
-    html += "</tbody></table></div>";
-    return html;
-}
-
-function renderMarkdown(text) {
-    // Strip ``` fence delimiters (with or without a language tag) rather than
-    // rendering them as a literal code block -- models sometimes wrap a
-    // markdown table in a ```markdown fence, and we still want that table
-    // parsed as a table, not shown as one big preformatted blob.
-    const lines = text.split("\n").filter((l) => !/^\s*```(\w*)?\s*$/.test(l));
-    let html = "";
-    let i = 0;
-    const isListLine = (l) => /^\s*[-*]\s+/.test(l);
-    const isOrderedLine = (l) => /^\s*\d+\.\s+/.test(l);
-    const isTableStart = (idx) => lines[idx].trim().startsWith("|") && idx + 1 < lines.length && TABLE_SEP_RE.test(lines[idx + 1]);
-
-    while (i < lines.length) {
-        if (lines[i].trim() === "") {
-            i++;
-            continue;
-        }
-        if (isTableStart(i)) {
-            const tableLines = [lines[i], lines[i + 1]];
-            i += 2;
-            while (i < lines.length && lines[i].trim().startsWith("|")) {
-                tableLines.push(lines[i]);
-                i++;
-            }
-            html += tableToHtml(tableLines);
-            continue;
-        }
-        if (isListLine(lines[i])) {
-            const items = [];
-            while (i < lines.length && isListLine(lines[i])) {
-                items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
-                i++;
-            }
-            html += "<ul>" + items.map((it) => `<li>${inlineMd(it)}</li>`).join("") + "</ul>";
-            continue;
-        }
-        if (isOrderedLine(lines[i])) {
-            const items = [];
-            while (i < lines.length && isOrderedLine(lines[i])) {
-                items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
-                i++;
-            }
-            html += "<ol>" + items.map((it) => `<li>${inlineMd(it)}</li>`).join("") + "</ol>";
-            continue;
-        }
-        const para = [];
-        while (i < lines.length && lines[i].trim() !== "" && !isTableStart(i) && !isListLine(lines[i]) && !isOrderedLine(lines[i])) {
-            para.push(lines[i]);
-            i++;
-        }
-        html += `<p>${para.map(inlineMd).join("<br>")}</p>`;
-    }
-    return html;
-}
-
 function setContent(div, text, cls) {
     if (cls === "assistant") {
         div.innerHTML = renderMarkdown(text);
@@ -146,68 +18,26 @@ function setContent(div, text, cls) {
     }
 }
 
-function addMsg(text, cls) {
+function appendHtml(html) {
     log.classList.remove("empty", "loading");
-    const div = document.createElement("div");
-    div.className = "msg " + cls;
-    setContent(div, text, cls);
-    logInner.appendChild(div);
+    logInner.insertAdjacentHTML("beforeend", html);
     log.scrollTop = log.scrollHeight;
-    return div;
+    return logInner.lastElementChild;
 }
 
-const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const addMsg = (text, cls) => appendHtml(messageHtml(text, cls));
 
-function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-}
+const addConfirm = (value) => appendHtml(ticketHtml(value));
 
-// Renders buy_stock's interrupt payload as an order ticket. A payload without
-// order fields falls back to its plain message. Answering disables the
-// buttons so a stale ticket can't later send "yes" as a fresh message.
-function addConfirm(value) {
-    const isFinal = value.step === value.of;
-    let div;
-    if (value.symbol) {
-        div = addMsg("", "ticket");
-        const head = el("div", "ticket-head");
-        head.append(el("span", "", isFinal ? "Final confirmation" : "Confirm buy order"), el("span", "", `Step ${value.step} of ${value.of}`));
-        const body = el("div", "ticket-body");
-        const order = el("div", "ticket-order");
-        const shares = value.quantity === 1 ? "1 share" : `${value.quantity} shares`;
-        order.append(el("span", "ticket-symbol", value.symbol), el("span", "ticket-qty", shares));
-        body.append(order);
-        if (value.estimated_price != null) {
-            const dl = el("dl");
-            dl.append(el("dt", "", "Est. price"), el("dd", "", usd.format(value.estimated_price)));
-            dl.append(el("dt", "", "Est. cost"), el("dd", "", usd.format(value.estimated_cost)));
-            body.append(dl);
-        }
-        if (isFinal) body.append(el("p", "ticket-warning", "This submits the order and can't be undone."));
-        div.append(head, body);
-    } else {
-        div = addMsg(value.message, "confirm");
-    }
-    const actions = el("div", "confirm-actions");
-    const buttons = [
-        [isFinal ? "Place order" : "Continue", "yes", "primary"],
-        ["Cancel", "no", ""],
-    ].map(([label, reply, cls]) => {
-        const btn = el("button", cls, label);
-        btn.type = "button";
-        btn.onclick = () => {
-            if (busy) return;
-            buttons.forEach((b) => (b.disabled = true));
-            sendMessage(reply);
-        };
-        return btn;
-    });
-    actions.append(...buttons);
-    (div.querySelector(".ticket-body") || div).appendChild(actions);
-}
+// Delegated, since tickets arrive as HTML (ticketHtml), some rendered by the
+// server. Answering disables the buttons so a stale ticket can't later send
+// "yes" as a fresh message.
+log.addEventListener("click", (e) => {
+    const btn = e.target.closest(".confirm-actions button");
+    if (!btn || busy) return;
+    btn.parentElement.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    sendMessage(btn.dataset.reply);
+});
 
 // The id lives in the URL so a reload or a shared link reopens the same
 // conversation; frontend.py redirects a malformed or unknown one to "/".
@@ -423,37 +253,31 @@ async function sendMessage(text) {
     }
 }
 
-// Re-renders the whole log from the thread's server-side state. Human
-// messages and assistant replies with text are shown; tool-call-only
-// assistant messages and tool results are internal and skipped. A thread
-// paused on buy_stock's interrupt gets its Yes/No prompt back too.
+// Re-renders the whole log from the thread's server-side state, including a
+// pending buy_stock ticket.
 function renderThreadState(state) {
     const messages = state.values?.messages || [];
     if (!messages.length) {
         showEmptyHero();
         return;
     }
-    logInner.innerHTML = "";
-    log.classList.remove("empty", "loading");
-    resetBtn.classList.remove("hidden");
-    for (const msg of messages) {
-        if (msg.type === "human") addMsg(msg.content, "user");
-        else if (msg.type === "ai" && msg.content) addMsg(msg.content, "assistant");
-    }
     const interrupt = state.interrupts?.[0];
     pendingInterrupt = Boolean(interrupt);
-    if (interrupt) addConfirm(interrupt.value);
+    logInner.innerHTML = threadHtml(messages, interrupt?.value);
+    log.classList.remove("empty", "loading");
+    resetBtn.classList.remove("hidden");
+    log.scrollTop = log.scrollHeight;
 }
 
-// frontend.py inlines the thread's history (see its docstring). A run still in
-// flight is joined here, and since joining only delivers events emitted after
-// connecting, the log is re-rendered from state once it finishes.
+// frontend.py renders the thread's history into the page (see its docstring). A
+// run still in flight is joined here, and since joining only delivers events
+// emitted after connecting, the log is re-rendered from state once it finishes.
 async function restoreThread() {
     const bootstrap = document.getElementById("bootstrap");
     if (!bootstrap) return;
-    const { thread_id, state, active_run_id } = JSON.parse(bootstrap.textContent);
+    const { thread_id, pending_interrupt, active_run_id } = JSON.parse(bootstrap.textContent);
     threadId = thread_id;
-    renderThreadState(state);
+    pendingInterrupt = pending_interrupt;
     if (!active_run_id) return;
     busy = true;
     sendBtn.disabled = true;
@@ -501,9 +325,9 @@ resetBtn.onclick = () => {
     showEmptyHero();
 };
 
-// A thread page starts in "loading" so it never flashes the welcome screen
-// before its history renders; a thread re-joined before its first message
-// checkpoint can still end up empty.
+// A thread page starts in "loading" until its history streams in (see
+// frontend.py); one that turns out to have nothing to show ends on the welcome
+// screen.
 restoreThread().finally(() => {
     log.classList.remove("loading");
     if (!logInner.querySelector(".msg")) showEmptyHero();
