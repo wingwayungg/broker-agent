@@ -17,6 +17,8 @@ export interface Shell {
     suggestions: HTMLElement;
 }
 
+type Item = TextItem | TicketItem;
+
 // What frontend.py embeds in a thread page as #bootstrap.
 export interface Bootstrap {
     thread_id: string;
@@ -24,8 +26,6 @@ export interface Bootstrap {
     messages: { type: string; content: string }[];
     interrupt: InterruptValue | null;
 }
-
-type Item = TextItem | TicketItem;
 
 type Action = { type: "append"; item: Item } | { type: "text"; key: number; text: string } | { type: "replace"; key: number; item: Item | null } | { type: "answer"; key: number } | { type: "load"; items: Item[] };
 
@@ -143,7 +143,7 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         const status = textItem("status", "Thinking");
         dispatch({ type: "append", item: status });
 
-        try {
+        const run = async () => {
             s.threadId ??= await createThread();
             let res = await postRun(s.threadId, text, s.pendingInterrupt);
 
@@ -176,13 +176,15 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
                 s.pendingInterrupt = false;
                 if (!replied) dispatch({ type: "replace", key: status.key, item: textItem("assistant", "(no response)") });
             }
-        } catch {
-            dispatch({ type: "replace", key: status.key, item: textItem("error", "Network error — try again.") });
-        } finally {
-            shell.input.value = "";
-            refocus.current = true;
-            setBusyBoth(false);
-        }
+        };
+
+        return run()
+            .catch(() => dispatch({ type: "replace", key: status.key, item: textItem("error", "Network error — try again.") }))
+            .finally(() => {
+                shell.input.value = "";
+                refocus.current = true;
+                setBusyBoth(false);
+            });
     }
 
     function answerTicket(key: number, reply: string) {
@@ -199,12 +201,13 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         const runId = bootstrap?.active_run_id;
         const threadId = session.current.threadId;
         if (!runId || !threadId || !joinStatus) return;
-        (async () => {
-            setBusyBoth(true);
-            try {
-                const joinRes = await joinRun(threadId, runId);
+        setBusyBoth(true);
+        joinRun(threadId, runId)
+            .then(async (joinRes) => {
                 if (joinRes.ok && joinRes.body) await streamInto(joinRes, joinStatus.key);
-                const state: ThreadState | null = await fetchState(threadId);
+                return fetchState(threadId);
+            })
+            .then((state: ThreadState | null) => {
                 if (state) {
                     const interrupt = state.interrupts?.[0]?.value ?? null;
                     session.current.pendingInterrupt = Boolean(interrupt);
@@ -212,12 +215,10 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
                 } else {
                     dispatch({ type: "replace", key: joinStatus.key, item: null });
                 }
-            } catch {
-                // Leave whatever rendered; the next send will surface real errors.
-            } finally {
-                setBusyBoth(false);
-            }
-        })();
+            })
+            // Leave whatever rendered; the next send will surface real errors.
+            .catch(() => {})
+            .finally(() => setBusyBoth(false));
         // Mount only: the bootstrap is fixed for the page's lifetime.
     }, []);
 
