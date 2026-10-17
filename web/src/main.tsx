@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import type { Bootstrap, Shell } from "./App";
+import type { Bootstrap, Shell } from "./types";
 
 // frontend.py renders the page's static parts; React owns only #messages,
 // re-rendering the history the server put there from the same messages in
