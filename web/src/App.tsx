@@ -114,6 +114,7 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         });
     }
 
+    // NOTE: rewrite in the future using useEffectEvent if depending on any states like items or busy
     async function sendMessage(text: string) {
         const s = session.current;
         if (s.busy || !text) return;
