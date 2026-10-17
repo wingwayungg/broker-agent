@@ -5,7 +5,7 @@ RUN corepack enable
 # Corepack picks the pnpm version from the package.json in the working
 # directory (not pnpm's -C), so run from web/ or it fetches the latest pnpm.
 WORKDIR /src/web
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/.pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
 COPY app/static/render.js app/static/render.d.ts /src/app/static/

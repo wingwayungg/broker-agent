@@ -24,6 +24,7 @@ pnpm -C web install                    # browser UI deps (React, esbuild, TypeSc
 pnpm -C web build                      # tsc --noEmit, then bundle web/src -> app/static/app.js (gitignored; the page 404s it until built)
 pnpm -C web watch                      # rebuild on save (no type check); restart langgraph dev to pick up the new ?v= hash
 pnpm -C web typecheck                  # tsc --noEmit alone
+pnpm -C web lint                       # eslint (typescript-eslint + react-hooks); .pnpmfile.cjs gives it TS 6 while tsc stays on 7
 
 python -m local_api_cli.cli            # terminal chat loop (in-process, MemorySaver)
 uvicorn local_api_cli.api:app --reload # FastAPI: POST /ask {"question": ..., "thread_id": ...}

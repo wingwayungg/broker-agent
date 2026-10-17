@@ -126,7 +126,15 @@ function toolLabel(call: ToolCall): string {
     return symbol ? `${label} ${String(symbol).toUpperCase()}` : label;
 }
 
-function parseSSEEvent(raw: string): { eventType: string; data: any } | null {
+interface MetadataEntry {
+    metadata?: { langgraph_node?: string };
+}
+
+interface UpdatesData {
+    __interrupt__?: { value: InterruptValue }[];
+}
+
+function parseSSEEvent(raw: string): { eventType: string; data: unknown } | null {
     let eventType = "message";
     const dataLines: string[] = [];
     for (const line of raw.split("\n")) {
@@ -186,15 +194,16 @@ export async function consumeStream(
             buf = buf.slice(idx + 2);
             if (!record) continue;
 
+            const data = record.data;
             if (record.eventType === "messages/metadata") {
-                for (const [msgId, entry] of Object.entries<any>(record.data)) {
+                for (const [msgId, entry] of Object.entries(data as Record<string, MetadataEntry>)) {
                     if (entry?.metadata?.langgraph_node === "agent") agentMsgIds.add(msgId);
                 }
-            } else if (record.eventType === "updates" && record.data.__interrupt__) {
+            } else if (record.eventType === "updates" && (data as UpdatesData).__interrupt__) {
                 interrupted = true;
-                handlers.onInterrupt(record.data.__interrupt__[0].value);
+                handlers.onInterrupt((data as UpdatesData).__interrupt__![0].value);
             } else if (record.eventType === "messages/partial" || record.eventType === "messages/complete") {
-                const msg: MessageChunk | undefined = record.data[0];
+                const msg: MessageChunk | undefined = (data as MessageChunk[])[0];
                 if (msg?.type !== "ai" || !agentMsgIds.has(msg.id)) continue;
                 if (msg.id !== currentMsgId) {
                     currentMsgId = msg.id;

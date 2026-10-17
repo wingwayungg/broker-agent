@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { consumeStream, fetchState, joinRun, postWithRecovery, storeThread } from "./api";
 import type { ThreadState } from "./api";
 import { reducer, textItem, threadItems, ticketItem } from "./items";
@@ -33,11 +33,11 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
     useLayoutEffect(() => {
         shell.log.className = empty ? "empty" : "";
         shell.reset.classList.toggle("hidden", empty);
-    }, [empty]);
+    }, [empty, shell]);
 
     useLayoutEffect(() => {
         shell.log.scrollTop = shell.log.scrollHeight;
-    }, [items]);
+    }, [items, shell]);
 
     useEffect(() => {
         shell.input.disabled = shell.send.disabled = busy;
@@ -45,7 +45,7 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
             refocus.current = false;
             shell.input.focus();
         }
-    }, [busy]);
+    }, [busy, shell]);
 
     // Streams a run's events into the log behind the `statusKey` bubble, which
     // is retitled for tool calls, then replaced by the reply or dropped for a
@@ -72,7 +72,6 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         });
     }
 
-    // NOTE: rewrite in the future using useEffectEvent if depending on any states like items or busy
     function sendMessage(text: string) {
         const s = session.current;
         if (s.busy || !text) return;
@@ -134,17 +133,19 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
             // Leave whatever rendered; the next send will surface real errors.
             .catch(() => {})
             .finally(() => setBusyBoth(false));
-        // Mount only: the bootstrap is fixed for the page's lifetime.
-    }, []);
+        // Both are fixed for the page's lifetime, so this runs once.
+    }, [bootstrap, joinStatus]);
+
+    const send = useEffectEvent(sendMessage);
 
     useEffect(() => {
-        const onSend = () => sendMessage(shell.input.value.trim());
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === "Enter") sendMessage(shell.input.value.trim());
+        const onSend = () => send(shell.input.value.trim());
+        const onKeyDown = (e: Event) => {
+            if ((e as KeyboardEvent).key === "Enter") send(shell.input.value.trim());
         };
         const onSuggestion = (e: Event) => {
             const btn = (e.target as Element).closest("button");
-            if (btn) sendMessage(btn.textContent!);
+            if (btn) send(btn.textContent!);
         };
         const onReset = () => {
             storeThread(null);
@@ -152,7 +153,7 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
             session.current.pendingInterrupt = false;
             dispatch({ type: "load", items: [] });
         };
-        const listeners: [HTMLElement, string, (e: any) => void][] = [
+        const listeners: [HTMLElement, string, (e: Event) => void][] = [
             [shell.send, "click", onSend],
             [shell.input, "keydown", onKeyDown],
             [shell.suggestions, "click", onSuggestion],
@@ -162,7 +163,7 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         return () => {
             for (const [el, type, fn] of listeners) el.removeEventListener(type, fn);
         };
-    }, []);
+    }, [shell]);
 
     return items.map((item) => (item.kind === "ticket" ? <Ticket key={item.key} item={item} onReply={answerTicket} /> : <Message key={item.key} item={item} />));
 }
