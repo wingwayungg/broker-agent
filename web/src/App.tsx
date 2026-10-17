@@ -73,7 +73,7 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
     }
 
     // NOTE: rewrite in the future using useEffectEvent if depending on any states like items or busy
-    async function sendMessage(text: string) {
+    function sendMessage(text: string) {
         const s = session.current;
         if (s.busy || !text) return;
         setBusyBoth(true);
@@ -81,24 +81,19 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         const status = textItem("status", "Thinking");
         dispatch({ type: "append", item: status });
 
-        const run = async () => {
-            const res = await postWithRecovery(s, text, () =>
-                dispatch({ type: "text", key: status.key, text: "Starting a new conversation" }),
-            );
+        postWithRecovery(s, text, () => dispatch({ type: "text", key: status.key, text: "Starting a new conversation" }))
+            .then(async (res: Response) => {
+                if (!res.ok || !res.body) {
+                    dispatch({ type: "replace", key: status.key, item: textItem("error", `Something went wrong (${res.status}). Try again.`) });
+                    return;
+                }
 
-            if (!res.ok || !res.body) {
-                dispatch({ type: "replace", key: status.key, item: textItem("error", `Something went wrong (${res.status}). Try again.`) });
-                return;
-            }
-
-            const { replied, interrupted } = await streamInto(res, status.key);
-            if (!interrupted) {
-                s.pendingInterrupt = false;
-                if (!replied) dispatch({ type: "replace", key: status.key, item: textItem("assistant", "(no response)") });
-            }
-        };
-
-        return run()
+                const { replied, interrupted } = await streamInto(res, status.key);
+                if (!interrupted) {
+                    s.pendingInterrupt = false;
+                    if (!replied) dispatch({ type: "replace", key: status.key, item: textItem("assistant", "(no response)") });
+                }
+            })
             .catch(() => dispatch({ type: "replace", key: status.key, item: textItem("error", "Network error — try again.") }))
             .finally(() => {
                 shell.input.value = "";
