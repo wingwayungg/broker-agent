@@ -66,6 +66,34 @@ export function postRun(threadId: string, text: string, asResume: boolean): Prom
     });
 }
 
+// Posts `text` to the session's thread, creating or recreating the thread
+// record as needed. Updates `session` in place; `onFreshThread` fires when the
+// old thread could not be recovered.
+export async function postWithRecovery(
+    session: { threadId: string | null; pendingInterrupt: boolean },
+    text: string,
+    onFreshThread: () => void,
+): Promise<Response> {
+    session.threadId ??= await createThread();
+    const res = await postRun(session.threadId, text, session.pendingInterrupt);
+    if (res.status !== 404) return res;
+
+    // The server restarted since this tab last talked to it and lost the
+    // thread record. The history is still in Atlas, so recreate the record
+    // under the same id and resend; a pending confirmation is in the
+    // checkpoint too, so the resume stays valid.
+    if (await recreateThread(session.threadId)) {
+        return postRun(session.threadId, text, session.pendingInterrupt);
+    }
+    // Recreating failed (e.g. Atlas unreachable): fall back to a fresh
+    // thread, where a resume no longer makes sense.
+    storeThread(null);
+    session.pendingInterrupt = false;
+    onFreshThread();
+    session.threadId = await createThread();
+    return postRun(session.threadId, text, false);
+}
+
 export function joinRun(threadId: string, runId: string): Promise<Response> {
     const modes = encodeURIComponent(JSON.stringify(STREAM_MODES));
     return fetch(`/threads/${threadId}/runs/${runId}/stream?stream_mode=${modes}`);

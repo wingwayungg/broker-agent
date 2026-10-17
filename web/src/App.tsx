@@ -1,52 +1,10 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
-import type { InterruptValue } from "../../app/static/render.js";
-import { consumeStream, createThread, fetchState, joinRun, postRun, recreateThread, storeThread } from "./api";
+import { consumeStream, fetchState, joinRun, postWithRecovery, storeThread } from "./api";
 import type { ThreadState } from "./api";
+import { reducer, textItem, threadItems, ticketItem } from "./items";
 import { Message } from "./Message";
 import { Ticket } from "./Ticket";
-import type { Bootstrap, Item, Shell } from "./types";
-
-type Action = { type: "append"; item: Item } | { type: "text"; key: number; text: string } | { type: "replace"; key: number; item: Item | null } | { type: "answer"; key: number } | { type: "load"; items: Item[] };
-
-let lastKey = 0;
-const nextKey = () => ++lastKey;
-
-const textItem = (kind: "user" | "assistant" | "status" | "error", text: string): Item => ({
-    key: nextKey(),
-    kind,
-    text,
-});
-
-const ticketItem = (value: InterruptValue): Item => ({ key: nextKey(), kind: "ticket", value, answered: false });
-
-// Actions naming a key that is gone (the log was reset or re-rendered from
-// state meanwhile) are no-ops.
-function reducer(items: Item[], action: Action): Item[] {
-    switch (action.type) {
-        case "append":
-            return [...items, action.item];
-        case "text":
-            return items.map((it) => (it.key === action.key && it.kind !== "ticket" ? { ...it, text: action.text } : it));
-        case "replace":
-            return items.flatMap((it) => (it.key !== action.key ? [it] : action.item ? [action.item] : []));
-        case "answer":
-            return items.map((it) => (it.key === action.key && it.kind === "ticket" ? { ...it, answered: true } : it));
-        case "load":
-            return action.items;
-    }
-}
-
-// The visible part of a thread, matching threadHtml in render.js: human
-// messages and assistant replies with text, then a pending interrupt's ticket.
-function threadItems(messages: { type: string; content: string }[], interrupt: InterruptValue | null): Item[] {
-    const items: Item[] = [];
-    for (const m of messages) {
-        if (m.type === "human") items.push(textItem("user", m.content));
-        else if (m.type === "ai" && m.content) items.push(textItem("assistant", m.content));
-    }
-    if (interrupt) items.push(ticketItem(interrupt));
-    return items;
-}
+import type { Bootstrap, Shell } from "./types";
 
 export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: Shell }) {
     // A run still in flight when the page loaded is joined on mount, behind a
@@ -124,27 +82,9 @@ export function App({ bootstrap, shell }: { bootstrap: Bootstrap | null; shell: 
         dispatch({ type: "append", item: status });
 
         const run = async () => {
-            s.threadId ??= await createThread();
-            let res = await postRun(s.threadId, text, s.pendingInterrupt);
-
-            if (res.status === 404) {
-                // The server restarted since this tab last talked to it and lost
-                // the thread record. The history is still in Atlas, so recreate
-                // the record under the same id and resend; a pending confirmation
-                // is in the checkpoint too, so the resume stays valid.
-                if (await recreateThread(s.threadId)) {
-                    res = await postRun(s.threadId, text, s.pendingInterrupt);
-                } else {
-                    // Recreating failed (e.g. Atlas unreachable): fall back to a
-                    // fresh thread, where a resume no longer makes sense.
-                    storeThread(null);
-                    s.threadId = null;
-                    s.pendingInterrupt = false;
-                    dispatch({ type: "text", key: status.key, text: "Starting a new conversation" });
-                    s.threadId = await createThread();
-                    res = await postRun(s.threadId, text, false);
-                }
-            }
+            const res = await postWithRecovery(s, text, () =>
+                dispatch({ type: "text", key: status.key, text: "Starting a new conversation" }),
+            );
 
             if (!res.ok || !res.body) {
                 dispatch({ type: "replace", key: status.key, item: textItem("error", `Something went wrong (${res.status}). Try again.`) });
