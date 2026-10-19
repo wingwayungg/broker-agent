@@ -5,8 +5,6 @@
 
 import { API_URL } from "@/lib/server";
 
-export const dynamic = "force-dynamic";
-
 // Hop-by-hop, or describing an encoding fetch has already undone.
 const DROPPED_HEADERS = ["host", "connection", "content-length", "content-encoding", "transfer-encoding"];
 

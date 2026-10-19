@@ -9,6 +9,10 @@ const config: NextConfig = {
     // gzip holds back the proxied event streams until a run ends instead of
     // passing tokens through as they arrive.
     compress: false,
+    // Partial prerendering: /thread/[id]'s shell (the layout and loading.tsx)
+    // is built once and sent as-is, and only the thread read streams per request.
+    cacheComponents: true,
+    partialPrefetching: true,
     async redirects() {
         // Conversation links from before conversations had their own path, and
         // from when that path was /c/.
