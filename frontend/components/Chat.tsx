@@ -6,8 +6,7 @@ import { type Action, reducer, textItem, threadItems, ticketItem } from "@/lib/i
 import { readEvents } from "@/lib/sse";
 import { APP_TITLE, conversationTitle } from "@/lib/title";
 import type { ThreadView } from "@/lib/types";
-import { Composer } from "./Composer";
-import { Header } from "./Header";
+import { useChatShell } from "./ChatShell";
 import { WelcomeHero } from "./Heroes";
 import { MessageBubble } from "./MessageBubble";
 import { OrderTicket } from "./OrderTicket";
@@ -78,6 +77,8 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         setBusy(value);
     }, []);
 
+    const { setControls } = useChatShell();
+
     useLayoutEffect(() => {
         if (log.current) log.current.scrollTop = log.current.scrollHeight;
     }, [items]);
@@ -109,7 +110,7 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         return () => controller.abort();
     }, [joinStatus, setBusyBoth]);
 
-    async function send(text: string) {
+    const send = useCallback(async (text: string) => {
         if (busyRef.current) return;
         setBusyBoth(true);
         dispatch({ type: "append", item: textItem("user", text) });
@@ -140,7 +141,7 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         } finally {
             setBusyBoth(false);
         }
-    }
+    }, [setBusyBoth]);
 
     function answerTicket(key: number, reply: string) {
         if (busyRef.current) return;
@@ -148,34 +149,35 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         send(reply);
     }
 
-    function reset() {
+    const reset = useCallback(() => {
         threadId.current = null;
         dispatch({ type: "load", items: [] });
         window.history.replaceState(null, "", "/");
         document.title = APP_TITLE;
-    }
+    }, []);
 
     const empty = items.length === 0;
+    // Layout, not passive, so a client navigation never paints the layout's
+    // Composer disabled between loading.tsx and this page.
+    useLayoutEffect(() => {
+        setControls({ busy, empty, send, reset });
+        return () => setControls(null);
+    }, [busy, empty, send, reset, setControls]);
+
     return (
-        <>
-            <Header onReset={empty ? undefined : reset} resetDisabled={busy} />
-            <main>
-                <div id="log" ref={log} className={empty ? "empty" : ""}>
-                    <div id="log-inner">
-                        {empty && <WelcomeHero onPick={send} />}
-                        <div id="messages">
-                            {items.map((item) =>
-                                item.kind === "ticket" ? (
-                                    <OrderTicket key={item.key} item={item} disabled={busy} onReply={answerTicket} />
-                                ) : (
-                                    <MessageBubble key={item.key} item={item} />
-                                ),
-                            )}
-                        </div>
-                    </div>
+        <div id="log" ref={log} className={empty ? "empty" : ""}>
+            <div id="log-inner">
+                {empty && <WelcomeHero onPick={send} />}
+                <div id="messages">
+                    {items.map((item) =>
+                        item.kind === "ticket" ? (
+                            <OrderTicket key={item.key} item={item} disabled={busy} onReply={answerTicket} />
+                        ) : (
+                            <MessageBubble key={item.key} item={item} />
+                        ),
+                    )}
                 </div>
-            </main>
-            <Composer disabled={busy} onSend={send} />
-        </>
+            </div>
+        </div>
     );
 }

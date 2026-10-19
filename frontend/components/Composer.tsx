@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useChatShell } from "./ChatShell";
 
-export function Composer({ disabled, onSend }: { disabled: boolean; onSend?: (text: string) => void }) {
+export function Composer() {
+    const { controls } = useChatShell();
+    const disabled = !controls || controls.busy;
     const [text, setText] = useState("");
     const input = useRef<HTMLInputElement>(null);
     // Focus returns after a send this box made, not when a page that re-joined
@@ -23,10 +26,10 @@ export function Composer({ disabled, onSend }: { disabled: boolean; onSend?: (te
                 onSubmit={(e) => {
                     e.preventDefault();
                     const message = text.trim();
-                    if (!message || disabled || !onSend) return;
+                    if (!message || !controls || controls.busy) return;
                     sent.current = true;
                     setText("");
-                    onSend(message);
+                    controls.send(message);
                 }}
             >
                 <input
