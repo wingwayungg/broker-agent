@@ -30,6 +30,10 @@ env/
 .coverage
 htmlcov/
 
-# Frontend (app/static/app.js is built from web/)
-web/node_modules/
-app/static/app.js
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+*.tsbuildinfo
+
+.ruff_cache/

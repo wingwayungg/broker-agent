@@ -1,6 +1,8 @@
 # Broker Portfolio AI Agent
 
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-1C3C3C?logo=langgraph&logoColor=white)](https://www.langchain.com/langgraph)
+[![Frontend: Next.js](https://img.shields.io/badge/Frontend-Next.js-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![API: FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![LLM by Cerebras](https://img.shields.io/badge/LLM-Cerebras-F15A29)](https://www.cerebras.ai/)
 [![Search on MongoDB Atlas](https://img.shields.io/badge/Search-MongoDB%20Atlas-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/products/platform/atlas-vector-search)
 [![Deployed on Fly](https://img.shields.io/badge/Deployed%20on-Fly-8B5CF6?logo=flydotio&logoColor=white)](https://fly.io/)
@@ -108,36 +110,40 @@ Nothing after the first message names a company again. "Compare two stocks" has 
 
   The small model's dense search adds nothing over keywords, so the larger retrieval-tuned model is worth it — and quantizing it to float16 at build time keeps its scores while saving ~85MB.
 
-- **Plain `requests` rather than MCP or vendor SDKs.** Real-time market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: the result is more deterministic and what MCP is actually good at — letting a model discover and pick among tools — has nothing to add here. The REST APIs already do the job that an MCP server does, and one `requests.get` is lighter on a small instance than an extra dependency chain (see the full reasoning in `app/market_data.py`).
+- **Plain `requests` rather than MCP or vendor SDKs.** Real-time market data is fetched with plain `requests` rather than through MCP servers or vendor SDKs: the result is more deterministic and what MCP is actually good at — letting a model discover and pick among tools — has nothing to add here. The REST APIs already do the job that an MCP server does, and one `requests.get` is lighter on a small instance than an extra dependency chain (see the full reasoning in `backend/app/market_data.py`).
 
-- **Thread memory.** Each conversation's checkpoints are stored in the same MongoDB Atlas cluster as the 10-K index, so refreshing the browser, redeploying or the free instance spinning down doesn't lose the chat: the page reopens its thread by id and the history comes back. Each browser tab is its own thread and remembers its id only for the life of the tab. Chat history is AES-encrypted in Atlas database and deleted after 30 days.
+- **Thread memory.** Each conversation's checkpoints are stored in the same MongoDB Atlas cluster as the 10-K index, so refreshing the browser, redeploying or the free instance spinning down doesn't lose the chat: each conversation has its own link (`/c/<id>`), and opening it renders the history on the server. Chat history is AES-encrypted in Atlas database and deleted after 30 days.
 
 - **A maximum token size (upcoming)** Every turn currently resends the whole thread to the model, so a long conversation keeps growing — more cost, slower replies, and eventually the model's context window is exceeded. The next step is a token budget on the thread: once it is reached, the oldest turns are condensed into a short running summary rather than simply dropped, so the assistant still knows which stocks were discussed and what was already researched while the context stays within the limit.
 
 ## Programming Languages
 
-The language I used is Python, with LangGraph and LangChain for the agent, Pydantic for the data models, Starlette for the web layer and plain `requests` for market data. The browser page is hand-written HTML, CSS and JavaScript with no framework. The language model is `gpt-oss-120b` served by [Cerebras](https://www.cerebras.ai/) by default, or by [Groq](https://groq.com/) with `LLM_PROVIDER=groq` (the provider is a single setting in `app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
+The backend is Python, with LangGraph and LangChain for the agent, FastAPI and Pydantic for the API, and plain `requests` for market data. The frontend is TypeScript with Next.js and React. The language model is `gpt-oss-120b` served by [Cerebras](https://www.cerebras.ai/) by default, or by [Groq](https://groq.com/) with `LLM_PROVIDER=groq` (the provider is a single setting in `backend/app/config.py`), live prices come from Yahoo Finance and web search from Tavily. The app ships as a single Docker image.
 
 ## Deployment
 
 Please visit [https://broker-ai-agent-yung.fly.dev/](https://broker-ai-agent-yung.fly.dev/)
 
-The image runs `langgraph dev`, which serves the LangGraph API and the browser UI together, so the deployed app and the local one are the same server. That is a development server, and I chose it knowingly: its API is unauthenticated, so anyone with the URL can run the graph on my API keys. With the broker mocked there is nothing to lose, but it is the first thing I would change before connecting a real account — either an `auth` block in `langgraph.json`, or serving the graph from a small uvicorn app of my own.
+The Docker image is built in two stages: Node builds the Next.js server, and only its output and the `node` binary are copied into the Python image, so no build tooling ships. `scripts/start.sh` starts the API on localhost, waits until it answers, then starts the Next.js server; if either stops, the machine restarts. Both fit the 1GB Fly VM.
+
+The API is unauthenticated: anyone with the URL can run the agent on my API keys. With the broker mocked there is nothing to lose, but accounts are the first thing I would add before connecting a real one, as a FastAPI dependency on the routes in `backend/api/main.py`. Runs are tracked in the API's process, which suits a single machine; more than one would need a shared registry such as Redis.
 
 ## Running it locally
 
 ```bash
 python -m venv venv && source venv/bin/activate
-pip install -r requirements-dev.txt    # or requirements.txt if you don't need the tests or cli script
+pip install -r backend/requirements-dev.txt    # or backend/requirements.txt if you don't need the tests or cli script
+pnpm -C frontend install                       # Node 24 and pnpm
 # create a .env with CEREBRAS_API_KEY and TAVILY_API_KEY (USE_MOCK_BROKER defaults to true),
 # and SEC_USER_AGENT="Your Name you@example.com" for 10-K search (EDGAR requires a contact)
 # plus MONGODB_URI for 10-K search: a free Atlas M0 cluster in AWS us-east-1 (near Fly's iad), a database user,
 # and Network Access 0.0.0.0/0 (Fly machines have no static IP); set the same URI on Fly with `fly secrets set MONGODB_URI=...`
 # and a 32-character LANGGRAPH_AES_KEY to encrypt saved chats (`fly secrets set LANGGRAPH_AES_KEY=...`; keep a copy, a lost key makes encrypted threads unreadable)
-# to use Groq instead, uncomment langchain-groq in requirements.in, recompile the locks (see CLAUDE.md), reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
+# to use Groq instead, uncomment langchain-groq in backend/requirements.in, recompile the locks (see CLAUDE.md), reinstall, comment langchain-openai, and set LLM_PROVIDER=groq and GROQ_API_KEY
 
-langgraph dev                 # browser chat at http://localhost:2024/
-python -m local_api_cli.cli   # or chat in the terminal
-python -m pytest              # run the tests (Atlas ones need MONGODB_TEST_URI; see tests/test_rag_atlas.py)
-python -m evals.filings_eval  # score 10-K retrieval (add --judge to grade answers with the LLM)
+make dev                      # API on :8000 and the web app at http://localhost:3000
+make test                     # pytest and vitest (Atlas tests need MONGODB_TEST_URI; see backend/tests/test_rag_atlas.py)
+make lint                     # ruff, pyright, eslint, tsc
+cd backend && python -m cli   # or chat in the terminal, no servers needed
+cd backend && python -m evals.filings_eval  # score 10-K retrieval (add --judge to grade answers with the LLM)
 ```

@@ -1,0 +1,15 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = ["notebooks", ".langgraph_api"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pyright]
+include = ["app", "api", "cli"]
+pythonVersion = "3.14"
+# The venv lives at the repo root, shared with editor settings.
+venvPath = ".."
+venv = "venv"
+typeCheckingMode = "basic"

@@ -1,0 +1,14 @@
+# Locked runtime deps first, so dev can never drift from what Fly runs.
+-c requirements.txt
+-r requirements.in
+pytest~=9.1
+jupyterlab~=4.6
+ipykernel~=7.4
+# LangGraph Studio for debugging the graph: `langgraph dev` from backend/ (langgraph.json).
+langgraph-cli[inmem]~=0.4.35
+# Transitive (langgraph-api). Capped because 49+ ships no x86_64 macOS wheels, so
+# the lock can't install in an Intel-Mac venv. Costs langgraph-api 0.16 -> 0.13
+# (0.16 needs cryptography>=50). Lift once local dev is on arm64.
+cryptography<49
+ruff~=0.17
+pyright~=1.1.414

@@ -1,0 +1,30 @@
+# Runtime deps only -- this is what the Fly Docker image installs, so
+# keep it lean (1GB VM). Dev/local extras live in requirements-dev.in.
+#
+# Ranges only (~= is npm's ^ for >=1.0, npm's ~ for 0.x). requirements.txt is
+# the exact lock the Dockerfile installs; regenerate it with
+#   uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt [--upgrade]
+langgraph~=1.2
+# The API (api/). Capped below 0.143: that release needs opentelemetry-api>=1.44,
+# but langgraph-api (dev, for LangGraph Studio) pins 1.42.1.
+fastapi~=0.141.1
+uvicorn[standard]~=0.54
+langchain-core~=1.6
+# Uncomment when switching to groq
+# langchain-groq
+langchain-openai~=1.7  # Cerebras, via its OpenAI-compatible endpoint
+pydantic~=2.14
+python-dotenv~=1.2
+requests~=2.34
+# Local static embeddings for 10-K search (app/rag.py). numpy-only at
+# inference, ~30MB model; no torch.
+model2vec~=0.10.0
+numpy~=2.5
+# MongoDB Atlas holds the 10-K index; hybrid BM25 + vector search with RRF
+# runs in Atlas (see app/rag.py). 4.10+ for float32 BSON vectors.
+pymongo~=4.19
+langchain-text-splitters~=1.1
+# Chat-thread checkpoints in the same Atlas cluster (app/checkpointer.py)
+langgraph-checkpoint-mongodb~=0.5.1
+# AES for those checkpoints (LANGGRAPH_AES_KEY), see app/checkpointer.py
+pycryptodome~=4.0

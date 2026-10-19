@@ -1,22 +1,21 @@
-# The page's React bundle (app/static/app.js), built from web/ with render.js
-# bundled in. Node stays in this stage, so the final image is Python-only.
+# The Next.js standalone server, built here. Only its output and the node binary
+# reach the final image; no node_modules install or build tooling ships.
 FROM node:24-slim AS web
 RUN corepack enable
 # Corepack picks the pnpm version from the package.json in the working
-# directory (not pnpm's -C), so run from web/ or it fetches the latest pnpm.
-WORKDIR /src/web
-COPY web/package.json web/pnpm-lock.yaml web/.pnpmfile.cjs ./
+# directory (not pnpm's -C), so run from frontend/.
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY web/ ./
-COPY app/static/render.js app/static/render.d.ts /src/app/static/
-RUN pnpm build
+COPY frontend/ ./
+RUN NEXT_TELEMETRY_DISABLED=1 pnpm build
 
 FROM python:3.14-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.txt backend/
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Huggingface cache does not persist across a stop and start on Fly.io
 # which means the embedding model has to be downloaded across a server restart
@@ -31,28 +30,17 @@ RUN python -c "from model2vec import StaticModel; \
     '${EMBEDDING_MODEL}', \
     quantize_to='${EMBEDDING_DTYPE}' \
     ).save_pretrained('/models/${EMBEDDING_MODEL}')" \
-    && rm -rf /root/.cache/huggingface 
+    && rm -rf /root/.cache/huggingface
 ENV EMBEDDING_MODEL=/models/${EMBEDDING_MODEL} HF_HUB_OFFLINE=1
 
-COPY . .
-COPY --from=web /src/app/static/app.js app/static/app.js
+COPY --from=web /usr/local/bin/node /usr/local/bin/node
+RUN node --version
 
-EXPOSE 2024
+COPY backend/ backend/
+COPY --from=web /src/frontend/.next/standalone frontend/
+COPY --from=web /src/frontend/.next/static frontend/.next/static
+COPY scripts/start.sh scripts/
 
-# This app is for demo only, its API is unauthenticated. Acceptable while the broker is mocked.
-# If connecting to a real broker in the future,the app should
-# 1. Add an "auth" block to langgraph.json
-# 2. Or Or replace langgraph dev with uvicorn, where auth is handled
-# Alternatively, run the project privately on your own machine, where the
-# unauthenticated API is not exposed and no auth is needed.
-#
-# `langgraph dev` serves the whole app in two ways: the LangGraph API
-# (threads, SSE streaming, interrupt/resume) plus the browser UI mounted via
-# langgraph.json. Using it in prod keeps deployed and local identical, and
-# avoids hand-writing /threads endpoints using uvicorn
-#
-# Switching to `langgraph build` would make Docker image depend on Postgres
-# and Redis, which is far larger, and drives maintenance cost up both technically
-# and financially -- which deviates from the goal of a quick demo.
-
-CMD ["langgraph", "dev", "--host", "0.0.0.0", "--port", "2024", "--no-browser", "--no-reload"]
+# Next.js serves the public port and proxies /api to the agent API on localhost.
+EXPOSE 3000
+CMD ["scripts/start.sh"]

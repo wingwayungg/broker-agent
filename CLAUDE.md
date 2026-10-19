@@ -5,48 +5,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-source venv/bin/activate               # project venv (see .vscode/settings.json)
-pip install -r requirements-dev.txt    # exact lock; requirements.txt is the runtime-only lock Fly installs
+source venv/bin/activate               # project venv at the repo root (see .vscode/settings.json)
+make dev                               # API on :8000 + web app on http://localhost:3000 (use localhost, not 127.0.0.1: next dev blocks HMR there)
+make test                              # pytest (backend/) + vitest (frontend/)
+make lint                              # ruff, ruff format --check, pyright, eslint, tsc
+
+# backend/ (Python paths below are relative to it)
+pip install -r requirements-dev.txt    # exact lock; requirements.txt is the runtime-only lock the image installs
 # Edit ranges in requirements.in / requirements-dev.in (never the .txt locks), then regenerate:
 uv pip compile requirements.in --universal --python-version 3.14 -o requirements.txt [--upgrade]
 uv pip compile requirements-dev.in --universal --python-version 3.14 -o requirements-dev.txt [--upgrade]
-
-ruff check . [--fix]                   # lint (E,F,I,B,UP; config in pyproject.toml)
-ruff format .                          # format (line length 100)
-pyright                                # type-check app/ (basic mode; config in pyproject.toml)
-
-python -m pytest                       # full suite, offline (~1s); Atlas tests skip without MONGODB_TEST_URI
+uvicorn api.main:app --reload --port 8000   # the API alone; docs at /api/docs
+python -m pytest tests/test_api.py     # the API end to end with a scripted model
 docker run -d -p 27017:27017 mongodb/mongodb-atlas-local   # then:
 MONGODB_TEST_URI='mongodb://localhost:27017/?directConnection=true' python -m pytest tests/test_rag_atlas.py
-python -m pytest tests/test_tools.py::test_buy_stock_requires_two_affirmative_confirmations_before_submitting
-
-pnpm -C web install                    # browser UI deps (React, esbuild, TypeScript); pnpm-lock.yaml is the lock
-pnpm -C web build                      # tsc --noEmit, then bundle web/src -> app/static/app.js (gitignored; the page 404s it until built)
-pnpm -C web watch                      # rebuild on save (no type check); restart langgraph dev to pick up the new ?v= hash
-pnpm -C web typecheck                  # tsc --noEmit alone
-pnpm -C web lint                       # eslint (typescript-eslint + react-hooks); .pnpmfile.cjs gives it TS 6 while tsc stays on 7
-
-python -m local_api_cli.cli            # terminal chat loop (in-process, MemorySaver)
-uvicorn local_api_cli.api:app --reload # FastAPI: POST /ask {"question": ..., "thread_id": ...}
-langgraph dev                          # LangGraph API on :2024 + browser chat UI at / (what Fly runs)
-fly deploy                             # deploys the Dockerfile; app name in fly.toml
+python -m cli                          # terminal chat, in-process, no servers
+langgraph dev                          # LangGraph Studio for debugging the graph (dev-only dependency)
 python -m evals.filings_eval [--judge] # 10-K retrieval eval (network: EDGAR + Atlas via MONGODB_URI; --judge also uses the LLM)
+
+# frontend/ (pnpm; packageManager pins the version)
+pnpm -C frontend install
+pnpm -C frontend build                 # standalone server in .next/standalone (what the image runs)
+pnpm -C frontend lint | typecheck | test
+
+fly deploy                             # builds the Dockerfile remotely; app name in fly.toml
 ```
 
-Ruff is the linter and formatter and pyright the type checker (dev-only; `pyproject.toml`). The browser UI is a React + TypeScript app in `web/`, bundled by esbuild into `app/static/app.js`; the Dockerfile builds it in a Node stage, so `fly deploy` needs no local build and the final image has no Node. `.env` holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, `SEC_USER_AGENT` and `MONGODB_URI` (10-K search), optional `LANGGRAPH_AES_KEY`/`CHECKPOINT_TTL_DAYS`/`MONGODB_DB`/`LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
+Ruff is the linter and formatter and pyright the type checker (dev-only; `backend/pyproject.toml`, whose pyright `venvPath` points at the root venv). CI (`.github/workflows/ci.yml`) runs `make lint`/`make test`'s steps plus the Next.js build. The repo-root `.env` (found by `load_dotenv` walking up from `backend/app/config.py`; `langgraph.json` loads `../.env`) holds `CEREBRAS_API_KEY`, `TAVILY_API_KEY`, `SEC_USER_AGENT` and `MONGODB_URI` (10-K search), optional `LANGGRAPH_AES_KEY`/`CHECKPOINT_TTL_DAYS`/`MONGODB_DB`/`LLM_PROVIDER`/`CEREBRAS_MODEL`/`GROQ_API_KEY`/`GROQ_MODEL`/`USE_MOCK_BROKER`; `langgraph.json` also loads it.
 
 ## Architecture
 
-Read the module docstrings first — each file explains *why* it is shaped the way it is (mock-first broker contract, `requests` instead of MCP/Tavily SDKs, Starlette-not-FastAPI frontend), and those rationales are deliberate.
+Read the module docstrings first — each file explains *why* it is shaped the way it is (mock-first broker contract, `requests` instead of MCP/Tavily SDKs, replayable runs), and those rationales are deliberate.
+
+Two halves: `backend/` is the Python project (agent package `app/`, HTTP API `api/`, terminal chat `cli/`, `tests/`, `evals/`, `notebooks/`), `frontend/` the Next.js app. Python imports are rooted at `backend/` (`app.*`, `api.*`), so run Python commands from there. Paths below are relative to their half.
 
 ### Layers and dependency direction
 
 ```
-entry points   local_api_cli/cli.py   local_api_cli/api.py (FastAPI /ask)   app/frontend.py (browser UI, via LangGraph API)
-                         \                     |                                   |
-                   ask() in local_api_cli/session.py           langgraph.json -> platform_graph
-                                        \                             /
-graph            app/agent.py   (agent node <-> ToolNode loop over MessagesState)
+browser        frontend/ (Next.js: SSR pages, /api proxy route)
+                                        |  HTTP + SSE
+entry points   cli/ (terminal, ask())    api/ (FastAPI: main.py routes, runs.py RunManager, events.py)    langgraph.json (Studio)
+                         \                     |                                   /
+graph            app/agent.py   build_graph(checkpointer, model): agent node <-> ToolNode loop over MessagesState
                               |
 tools            app/tools.py   (8 @tool functions; ALL_TOOLS)
                      /                    |                         \
@@ -59,7 +59,7 @@ config           app/config.py  (settings, get_llm(), get_embedder())      app/m
 
 `evals/` sits outside this stack (imports `app.rag`/`app.config`, never imported by `app/`) and is excluded from the Docker image.
 
-Imports only go downward. `local_api_cli/` holds the in-process runners (terminal chat and FastAPI `/ask`); they don't import each other, both just call `ask()` from `local_api_cli/session.py`. It's named for its two contents rather than "local" because `tests/` and `notebooks/` are local too. Nothing in `local_api_cli/` ships to Fly — it's in `.dockerignore` and its deps (`fastapi`, `uvicorn`) are dev-only. Run them as `python -m local_api_cli.cli` / `uvicorn local_api_cli.api:app`, not `python local_api_cli/cli.py`, so the repo root stays on `sys.path`. `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
+Imports only go downward; `app/` never imports `api/` or `cli/`. `cli/` (terminal chat via `ask()` in `cli/session.py`, also used by the notebooks, which expect to be started from `backend/`) doesn't ship to Fly (`.dockerignore`). `app/tools.py` is the only place the LLM-facing surface is defined; `app/broker_client.py` is the only file meant to change when wiring a real broker (its methods raise `NotImplementedError` when `USE_MOCK_BROKER=false`). `app/models.py` is the return-type contract between the two — `Position.market_value` and `unrealized_pnl_pct` are computed properties, not stored fields, so a real broker only needs to supply `symbol/quantity/avg_cost/current_price`.
 
 ### One turn, end to end
 
@@ -68,20 +68,23 @@ Imports only go downward. `local_api_cli/` holds the in-process runners (termina
 3. `ToolNode` runs the tool. Read-only tools return formatted strings that the LLM turns into prose/tables on the next loop. `buy_stock` may instead hit `interrupt()`, which surfaces as `__interrupt__` in the result — the caller shows `value["message"]` and waits for a human.
 4. Loop continues until the model replies without tool calls.
 
-Memory is per `thread_id`. Under `langgraph dev` (what Fly runs) checkpoints go to Atlas (`checkpoints`/`checkpoint_writes`) through the custom saver `app/checkpointer.py`, named by `langgraph.json`'s `checkpointer` key, so threads survive restarts and spin-downs; they are AES-encrypted when `LANGGRAPH_AES_KEY` is set and expire after `CHECKPOINT_TTL_DAYS` (default 30) via a TTL index on `created_at` (details in the module docstring); it falls back to an in-memory saver if `MONGODB_URI` is unset or Atlas is unreachable at startup. Only checkpoints persist: the platform keeps thread *records* in memory (pickled to `.langgraph_api/`, lost on Fly), so after a restart a stored thread 404s and the record is recreated under the same id (server-side by `_read_thread` in `app/frontend.py` when a thread page loads, and by `recreateThread` in `web/src/api.ts` when an open tab's send 404s; `POST /threads` with `if_exists: "do_nothing"` and `metadata.graph_id: "agent"`, without which the state endpoint returns `{}`), and the history reads back from Atlas. The in-process `agent` (CLI and `/ask`) still uses `MemorySaver`.
+Memory is per `thread_id`, and the checkpoints are the thread: the API's graph runs with `mongo_checkpointer()` from `app/checkpointer.py` (Atlas `checkpoints`/`checkpoint_writes`, AES-encrypted when `LANGGRAPH_AES_KEY` is set, expired after `CHECKPOINT_TTL_DAYS` via a TTL index; in-memory fallback if `MONGODB_URI` is unset or Atlas is unreachable at startup). There is no thread record: `POST /api/threads` only mints a uuid, the first run writes the first checkpoint, and any id with a checkpoint reads back after a restart. The terminal chat uses its own `MemorySaver`.
 
-### Two compiled graphs, two entry paths
+### The API and the SSR frontend
 
-`app/agent.py` exports both `agent` (compiled with `MemorySaver`, driven by `ask()` in `local_api_cli/session.py`) and `platform_graph` (compiled with **no** checkpointer, referenced by `langgraph.json`). LangGraph Platform/`langgraph dev` supplies its own checkpointer and errors if the graph already has one, so don't collapse these into one.
+`app/agent.py` has no import-time side effects: `build_graph(checkpointer=None, model=None)` binds `ALL_TOOLS` to `model or get_llm()` and compiles. The API builds it with the Atlas saver in `api/main.py`'s lifespan, `cli/session.py` with a `MemorySaver`, tests with a scripted model, and `platform_graph()` (a zero-arg factory for `langgraph.json`) with none, because LangGraph Studio supplies its own and refuses a graph that has one.
 
-- **In-process path** (`local_api_cli/session.py::ask()`): infers whether the thread is paused via `agent.get_state(config).interrupts` and sends `Command(resume=text)` vs a new user message accordingly. Callers just keep passing whatever the user typed — including "yes"/"no".
-- **LangGraph API path** (`app/frontend.py`): the browser page posts straight to `/threads/{id}/runs/stream` with `stream_mode: ["messages", "updates"]`, tracks `pendingInterrupt` from the previous response's `__interrupt__` update, and chooses `input` vs `command.resume` explicitly. It renders only AI messages a `messages/metadata` event attributes to `langgraph_node == "agent"` — `messages` stream mode also carries `research_stock`'s sub-agent and synthesis LLM calls from inside the tools node, and rendering those put the synthesis's three paragraphs in the reply bubble until the agent's own reply overwrote them. A page opened with `?thread_id=` is streamed: the shell goes out at once showing "Loading...", then the same response carries the thread's visible messages and any pending order ticket as rendered HTML in a `<template>` that an inline script moves into the log (the footer has already been sent), plus `#bootstrap` JSON with the thread id, the same messages and pending interrupt as data, and which run to re-join. The history is read through the SDK's in-process loopback client (run status before state) and rendered by running `app/static/render.js` — the same file bundled into the page — in V8 via `mini-racer` in a worker thread, so server and client markup can't drift. The bundle sits in `<head>` with `defer` so it downloads during the read; when it runs, React (`web/src/main.tsx`) mounts on `#messages` and re-renders the same markup from `#bootstrap`, so first paint never waits on it. Everything static (header, welcome hero and suggestions, input, buttons) is rendered only by `frontend.py`; React toggles and listens to those elements (`Shell` in `App.tsx`) but never renders them, so each string lives in one place. React owns the wrapper element of each bubble and gets its inner HTML from `render.js` (`messageBody`, `ticketParts`); `render.js` ends with a `typeof module` guard so esbuild can import it as CommonJS while V8 evals it as a classic script, and `app/static/render.d.ts` types it. State lives in `web/src/App.tsx` (a keyed item list in a reducer; thread id and pending interrupt in a ref, since the send/stream flows read them after awaits); the LangGraph calls and SSE parsing are in `web/src/api.ts`, free of React. A malformed id redirects to `/`; an unknown, empty or unreadable (API error) thread can't, since the 200 is already sent, so the page clears the URL and shows the welcome screen. `/static` files are served `immutable` because every reference carries a `?v=` content hash. It never touches `ask()` or `local_api_cli/api.py`. `frontend.py` is mounted via `langgraph.json`'s `http.app` hook and is a Starlette app on purpose (FastAPI would shadow LangGraph's `/docs`). Under `langgraph dev`, `local_api_cli/api.py` is not served at all.
+- **API** (`api/main.py`, models in `api/schemas.py`): `GET /api/health`, `POST /api/threads`, `GET /api/threads/{id}` (`ThreadView`: user messages and agent replies with text, the pending interrupt, `active_run`; 404 with no checkpoint and no run), `POST /api/threads/{id}/messages` (starts a run and streams it; 409 if one is running), `GET /api/threads/{id}/stream` (re-join; 204 if none). Ids are `UUID`-typed, so malformed ones are 422. Resume vs new message is decided server-side from `aget_state().interrupts`, the same rule as `ask()`. `read_thread` checks for an active run *before* reading state, so a run finishing between the two reads can't leave a page with neither the reply nor a run to join.
+- **Runs** (`api/runs.py`): `RunManager.start` claims the thread synchronously (before any await), then drives `graph.astream(stream_mode=["messages", "updates"])` in an `asyncio.Task` that outlives the request. Each `Run` keeps its whole SSE event log; `follow()` replays from event 0 then follows live, so a re-joining page gets the complete reply. A client disconnect doesn't cancel the run. Runs live in this process (fine for one Fly machine; several would need Redis).
+- **Events** (`api/events.py`, schema documented in `api/schemas.py`): `token {id, text}` deltas only from chunks whose metadata says `langgraph_node == "agent"` — `messages` mode also carries `research_stock`'s sub-agent and synthesis LLM calls from inside the tools node, and those must never reach the reply bubble. `status {label}` comes from the agent node's finished update (tool-call args stream in fragments); `TOOL_LABELS` lives here. Then `interrupt` (the payload as-is), `done`, `error`.
+- **Frontend** (`frontend/`): `app/c/[threadId]/page.tsx` is a server component that reads the thread through `lib/server.ts` (`API_URL`, default `http://127.0.0.1:8000`, `cache()`d so `generateMetadata` shares the read) and server-renders `<Chat initial={thread}>`; a malformed or unknown id redirects to `/` (inside the stream, because `loading.tsx` makes the page stream). `components/Chat.tsx` (client) holds the log as a keyed item reducer (`lib/items.ts`), plays SSE through `lib/sse.ts`, re-joins on mount when `initial.active_run` (with an `AbortController`, so StrictMode's double mount is harmless), and on a new conversation's first send `history.replaceState`s to `/c/{id}` (Next keeps its router in sync, nothing remounts). Browser calls go to `/api/*` on the same origin; `app/api/[...path]/route.ts` proxies them to the API as a streaming route handler rather than a rewrite (rewrites have their own proxy timeout and compression). `next.config.ts` sets `compress: false` (gzip held SSE back into one chunk) and `output: "standalone"`, and redirects old `/?thread_id=` links to `/c/`.
+- **Container** (`Dockerfile`, `scripts/start.sh`, `fly.toml` `internal_port = 3000`): a Node stage builds the standalone server; the Python image gets only its output and the `node` binary. `start.sh` runs uvicorn on 127.0.0.1:8000, waits for `/api/health`, then `node frontend/server.js` on :3000, and polls both PIDs (not `wait -n`, which macOS's bash 3.2 lacks) so either dying ends the container; it traps TERM/INT because bash as PID 1 otherwise ignores them. Node retitles its process to `next-server (...)`, so match it by port, not `pgrep -f server.js`.
 
 ### `buy_stock` is the only mutating tool, gated by `interrupt()`
 
 The safety model is structural, not prompt-based: `buy_stock` validates quantity and buying power *before* any interrupt (so an unaffordable order returns immediately with no confirmation), then calls `interrupt()` twice. Each pause returns control to the caller; the LLM is not re-invoked until an external resume arrives, so it can never answer its own confirmation. Only `_is_affirmative` replies (`y`/`yes`/`confirm`/`confirmed`, case-insensitive) advance; anything else cancels. There is intentionally no sell/modify/cancel tool, and `test_buy_stock_is_the_only_order_placing_tool` asserts that.
 
-The interrupt payload shape (`{"type": "confirm_buy_order", "step": 1|2, "of": 2, "message": ..., "symbol", "quantity", ...}`) is consumed by both `ask()` (reads `["message"]`) and the frontend (reads `value.message`, renders Yes/No buttons; `ticketParts` in `app/static/render.js` builds the ticket for both React's `Ticket` and the server's `ticketHtml`, and `InterruptValue` in `app/static/render.d.ts` types it) — change it in all three places together.
+The interrupt payload shape (`{"type": "confirm_buy_order", "step": 1|2, "of": 2, "message": ..., "symbol", "quantity", ...}`) is consumed by both `ask()` (reads `["message"]`) and the frontend (`InterruptValue` in `frontend/lib/types.ts`, rendered by `components/OrderTicket.tsx`, which falls back to `message` when the order fields are missing) — change them together. `tests/test_api.py` drives the whole confirmation flow through the API.
 
 Tests exercise this against the real LangGraph engine by building a tiny `ToolNode`-only graph (`tests/test_tools.py::_build_tool_graph`) and driving it with a hand-built `AIMessage` carrying a `buy_stock` tool call, rather than mocking `interrupt`.
 
@@ -103,11 +106,11 @@ Embedding model choice is memory-bound. The Dockerfile bakes the model from buil
 
 ### LLM provider
 
-`app/config.get_llm()` is the single switch (`cerebras` default with `gpt-oss-120b` via its OpenAI-compatible endpoint; `groq` and `gemini` alternatives, whose packages aren't in `requirements.txt` and must be installed first) and is `@cache`d, so every caller shares one client. It raises at startup if the selected provider's API key is unset — a Fly app that only has the old `GROQ_API_KEY` secret must set `CEREBRAS_API_KEY` (or `LLM_PROVIDER=groq`) before deploying. `app/agent.py` binds tools at import time (`_llm_with_tools`), so importing it instantiates the provider client; tests avoid importing `app.agent` and go through `app.tools` directly.
+`app/config.get_llm()` is the single switch (`cerebras` default with `gpt-oss-120b` via its OpenAI-compatible endpoint; `groq` and `gemini` alternatives, whose packages aren't in `requirements.txt` and must be installed first) and is `@cache`d, so every caller shares one client. It raises at startup if the selected provider's API key is unset — a Fly app that only has the old `GROQ_API_KEY` secret must set `CEREBRAS_API_KEY` (or `LLM_PROVIDER=groq`) before deploying. `build_graph()` calls it only when no model is passed, so importing `app.agent` creates no client; `tests/test_api.py` passes a `GenericFakeChatModel` subclass (`ScriptedModel`) that streams text word by word and tool calls in one chunk.
 
 ## Conventions
 
 - Don't write comments that restate what the code does, teach a language or library feature (`MemorySaver`, dict ordering), suggest alternatives ("swap for X if you want"), or give example code for a stub. Assume the reader knows Python and LangGraph. Comment only a non-obvious *why*: an external quirk (Yahoo's `chartPreviousClose`, Fly suspending the VM), a deliberate trade-off, or a constraint the code can't show. Don't repeat in a comment what a name, docstring, or this file already says.
-- The system prompt in `app/agent.py` asks for GFM tables for multi-row results; the frontend has a hand-rolled markdown renderer (`renderMarkdown` in `app/static/render.js`) that only handles paragraphs, inline bold/italic/code, lists, and tables — extend it if the prompt starts requesting other markdown. `render.js` also runs on the server in V8, so keep it pure: string in, HTML string out, no DOM or browser globals, no ES module syntax — and update `render.d.ts` and its `module.exports` line when its exported surface changes.
+- The system prompt in `app/agent.py` asks for GFM tables for multi-row results; the frontend's hand-rolled `renderMarkdown` (`frontend/lib/markdown.ts`) only handles paragraphs, inline bold/italic/code, lists, and tables (right-aligning figure columns, coloring signed figures) — extend it if the prompt starts requesting other markdown. It runs during server rendering and in the browser, so keep it pure (string in, escaped HTML string out) and covered by `lib/markdown.test.ts`.
 - The agent must not give buy/sell/hold advice; trading-decision questions are routed to `research_stock`. Keep new prompts and tool docstrings consistent with that.
-- Deployment target is a 1GB Fly VM with no volume (`fly.toml`; it was 512MB until LanceDB, which has since been replaced by Atlas, so it may fit 512MB again once measured; older docstrings still cite 512MB); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, notebooks, and README from the image.
+- Deployment target is a 1GB Fly VM with no volume (`fly.toml`; it was 512MB until LanceDB, which has since been replaced by Atlas, so it may fit 512MB again once measured; older docstrings still cite 512MB); the README and `market_data.py` docstrings cite this when rejecting heavier dependencies. `.dockerignore` excludes tests, evals, notebooks, `cli/`, dev requirements and docs from the image.
