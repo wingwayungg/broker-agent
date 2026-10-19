@@ -121,8 +121,8 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
                 id = await createThread();
                 threadId.current = id;
                 // Next.js keeps its router in sync with replaceState, so the page
-                // gets a shareable /c/ URL without remounting mid-conversation.
-                window.history.replaceState(null, "", `/c/${id}`);
+                // gets a shareable /thread/ URL without remounting mid-conversation.
+                window.history.replaceState(null, "", `/thread/${id}`);
                 document.title = `${conversationTitle(text)} · ${APP_TITLE}`;
             }
             const res = await postMessage(id, text);

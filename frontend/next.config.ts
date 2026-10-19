@@ -10,14 +10,16 @@ const config: NextConfig = {
     // passing tokens through as they arrive.
     compress: false,
     async redirects() {
-        // Conversation links from before conversations had their own path.
+        // Conversation links from before conversations had their own path, and
+        // from when that path was /c/.
         return [
             {
                 source: "/",
                 has: [{ type: "query", key: "thread_id", value: "(?<id>[0-9a-fA-F-]{36})" }],
-                destination: "/c/:id",
+                destination: "/thread/:id",
                 permanent: true,
             },
+            { source: "/c/:id", destination: "/thread/:id", permanent: true },
         ];
     },
 };
