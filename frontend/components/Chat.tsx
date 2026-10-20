@@ -87,60 +87,65 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         const id = threadId.current;
         if (!joinStatus || !id) return;
         const controller = new AbortController();
-        (async () => {
-            try {
-                const res = await joinRun(id, controller.signal);
+        joinRun(id, controller.signal)
+            .then((res) => {
                 if (res.status === 200 && res.body) {
-                    const outcome = await streamRun(res.body, joinStatus.key, dispatch);
-                    if (!outcome.replied && !outcome.interrupted && !outcome.failed) {
-                        dispatch({ type: "replace", key: joinStatus.key, item: null });
-                    }
-                } else {
-                    // The run ended between the server render and now; the
-                    // thread has its result.
-                    const thread = await readThread(id, controller.signal);
-                    dispatch(thread ? { type: "load", items: threadItems(thread) } : { type: "replace", key: joinStatus.key, item: null });
+                    return streamRun(res.body, joinStatus.key, dispatch).then((outcome) => {
+                        if (!outcome.replied && !outcome.interrupted && !outcome.failed) {
+                            dispatch({ type: "replace", key: joinStatus.key, item: null });
+                        }
+                    });
                 }
-            } catch {
+                // The run ended between the server render and now; the
+                // thread has its result.
+                return readThread(id, controller.signal).then((thread) => {
+                    dispatch(thread ? { type: "load", items: threadItems(thread) } : { type: "replace", key: joinStatus.key, item: null });
+                });
+            })
+            .catch(() => {
                 // Aborted on unmount, or the network dropped: leave what rendered.
-            } finally {
+            })
+            .finally(() => {
                 if (!controller.signal.aborted) setBusyBoth(false);
-            }
-        })();
+            });
         return () => controller.abort();
     }, [joinStatus, setBusyBoth]);
 
-    const send = useCallback(async (text: string) => {
-        if (busyRef.current) return;
+    const send = useCallback((text: string): Promise<void> => {
+        if (busyRef.current) return Promise.resolve();
         setBusyBoth(true);
         dispatch({ type: "append", item: textItem("user", text) });
         const status = textItem("status", "Thinking");
         dispatch({ type: "append", item: status });
-        try {
-            let id = threadId.current;
-            if (!id) {
-                id = await createThread();
-                threadId.current = id;
-                // Next.js keeps its router in sync with replaceState, so the page
-                // gets a shareable /thread/ URL without remounting mid-conversation.
-                window.history.replaceState(null, "", `/thread/${id}`);
-                document.title = `${conversationTitle(text)} · ${APP_TITLE}`;
-            }
-            const res = await postMessage(id, text);
-            if (!res.ok || !res.body) {
-                const message = res.status === 409 ? "Still working on the previous message." : `Something went wrong (${res.status}). Try again.`;
-                dispatch({ type: "replace", key: status.key, item: textItem("error", message) });
-                return;
-            }
-            const outcome = await streamRun(res.body, status.key, dispatch);
-            if (!outcome.replied && !outcome.interrupted && !outcome.failed) {
-                dispatch({ type: "replace", key: status.key, item: textItem("assistant", "(no response)") });
-            }
-        } catch {
-            dispatch({ type: "replace", key: status.key, item: textItem("error", "Network error — try again.") });
-        } finally {
-            setBusyBoth(false);
-        }
+        const existing = threadId.current;
+        const thread = existing
+            ? Promise.resolve(existing)
+            : createThread().then((id) => {
+                  threadId.current = id;
+                  // Next.js keeps its router in sync with replaceState, so the page
+                  // gets a shareable /thread/ URL without remounting mid-conversation.
+                  window.history.replaceState(null, "", `/thread/${id}`);
+                  document.title = `${conversationTitle(text)} · ${APP_TITLE}`;
+                  return id;
+              });
+        return thread
+            .then((id) => postMessage(id, text))
+            .then((res) => {
+                if (!res.ok || !res.body) {
+                    const message = res.status === 409 ? "Still working on the previous message." : `Something went wrong (${res.status}). Try again.`;
+                    dispatch({ type: "replace", key: status.key, item: textItem("error", message) });
+                    return;
+                }
+                return streamRun(res.body, status.key, dispatch).then((outcome) => {
+                    if (!outcome.replied && !outcome.interrupted && !outcome.failed) {
+                        dispatch({ type: "replace", key: status.key, item: textItem("assistant", "(no response)") });
+                    }
+                });
+            })
+            .catch(() => {
+                dispatch({ type: "replace", key: status.key, item: textItem("error", "Network error — try again.") });
+            })
+            .finally(() => setBusyBoth(false));
     }, [setBusyBoth]);
 
     const answerTicket = useCallback(
