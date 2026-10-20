@@ -1,24 +1,31 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useState } from "react";
+import { useStore } from "zustand";
+import { type ChatState, type ChatStore, IDLE } from "@/lib/chatStore";
 
-// What the mounted <Chat> lends the layout's Header and Composer. Null while no
-// Chat is mounted: during the server render, loading.tsx and error.tsx.
-export type ChatControls = { busy: boolean; empty: boolean; send: (text: string) => void; reset: () => void };
-
-const ChatShellContext = createContext<{
-    controls: ChatControls | null;
-    setControls: (controls: ChatControls | null) => void;
-} | null>(null);
+// The mounted <Chat>'s store, lent to the layout's Header and Composer. Null
+// while no Chat is mounted: during the server render, loading.tsx and error.tsx.
+// Two contexts so <Chat>, which only sets it, doesn't re-render when it changes.
+const StoreContext = createContext<ChatStore | null>(null);
+const SetStoreContext = createContext<((store: ChatStore | null) => void) | null>(null);
 
 export function ChatShellProvider({ children }: { children: React.ReactNode }) {
-    const [controls, setControls] = useState<ChatControls | null>(null);
-    const value = useMemo(() => ({ controls, setControls }), [controls]);
-    return <ChatShellContext.Provider value={value}>{children}</ChatShellContext.Provider>;
+    const [store, setStore] = useState<ChatStore | null>(null);
+    return (
+        <SetStoreContext.Provider value={setStore}>
+            <StoreContext.Provider value={store}>{children}</StoreContext.Provider>
+        </SetStoreContext.Provider>
+    );
 }
 
-export function useChatShell() {
-    const context = useContext(ChatShellContext);
-    if (!context) throw new Error("useChatShell outside ChatShellProvider");
-    return context;
+// Re-renders only when the selected slice changes; reads IDLE while no Chat is mounted.
+export function useChat<T>(selector: (state: ChatState) => T): T {
+    return useStore(useContext(StoreContext) ?? IDLE, selector);
+}
+
+export function useSetChatStore() {
+    const setStore = useContext(SetStoreContext);
+    if (!setStore) throw new Error("useSetChatStore outside ChatShellProvider");
+    return setStore;
 }

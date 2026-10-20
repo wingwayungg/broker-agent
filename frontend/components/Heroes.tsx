@@ -1,8 +1,10 @@
+import { useChat } from "./ChatShell";
 import { Logo } from "./Logo";
 
 export const SUGGESTIONS = ["Show my positions", "Research NVDA", "Risks in Apple's latest 10-K"];
 
-export function WelcomeHero({ onPick }: { onPick: (text: string) => void }) {
+export function WelcomeHero() {
+    const send = useChat((s) => s.send);
     return (
         <div className="empty-hero">
             <Logo />
@@ -10,7 +12,7 @@ export function WelcomeHero({ onPick }: { onPick: (text: string) => void }) {
             <p>Ask about your positions, research a ticker, or place a trade.</p>
             <div className="suggestions">
                 {SUGGESTIONS.map((text) => (
-                    <button key={text} type="button" onClick={() => onPick(text)}>
+                    <button key={text} type="button" onClick={() => send(text)}>
                         {text}
                     </button>
                 ))}
