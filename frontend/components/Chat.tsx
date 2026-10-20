@@ -168,15 +168,13 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         <div id="log" ref={log} className={empty ? "empty" : ""}>
             <div id="log-inner">
                 {empty && <WelcomeHero onPick={send} />}
-                <div id="messages">
-                    {items.map((item) =>
-                        item.kind === "ticket" ? (
-                            <OrderTicket key={item.key} item={item} disabled={busy} onReply={answerTicket} />
-                        ) : (
-                            <MessageBubble key={item.key} item={item} />
-                        ),
-                    )}
-                </div>
+                {items.map((item) =>
+                    item.kind === "ticket" ? (
+                        <OrderTicket key={item.key} item={item} disabled={busy} onReply={answerTicket} />
+                    ) : (
+                        <MessageBubble key={item.key} item={item} />
+                    ),
+                )}
             </div>
         </div>
     );
