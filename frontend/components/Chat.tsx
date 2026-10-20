@@ -143,11 +143,14 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         }
     }, [setBusyBoth]);
 
-    function answerTicket(key: number, reply: string) {
-        if (busyRef.current) return;
-        dispatch({ type: "answer", key });
-        send(reply);
-    }
+    const answerTicket = useCallback(
+        (key: number, reply: string) => {
+            if (busyRef.current) return;
+            dispatch({ type: "answer", key });
+            send(reply);
+        },
+        [send]
+    );
 
     const reset = useCallback(() => {
         threadId.current = null;
@@ -170,7 +173,7 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
                 {empty && <WelcomeHero onPick={send} />}
                 {items.map((item) =>
                     item.kind === "ticket" ? (
-                        <OrderTicket key={item.key} item={item} disabled={busy} onReply={answerTicket} />
+                        <OrderTicket key={item.key} item={item} onReply={answerTicket} />
                     ) : (
                         <MessageBubble key={item.key} item={item} />
                     ),

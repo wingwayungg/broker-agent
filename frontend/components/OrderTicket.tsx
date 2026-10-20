@@ -1,18 +1,19 @@
+import { memo } from "react";
 import type { TicketItem } from "@/lib/items";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-// buy_stock's confirmation as an order ticket. Once answered (or while a run is
-// in progress) its buttons are disabled, so it can't send another "yes" later.
-export function OrderTicket({ item, disabled, onReply }: { item: TicketItem; disabled: boolean; onReply: (key: number, reply: string) => void }) {
+// buy_stock's confirmation as an order ticket. Once answered its buttons are
+// disabled, so it can't send another "yes" later.
+export const OrderTicket = memo(function OrderTicket({ item, onReply }: { item: TicketItem; onReply: (key: number, reply: string) => void }) {
     const { value } = item;
     const isFinal = value.step === value.of;
     const actions = (
         <div className="confirm-actions">
-            <button className="primary" type="button" disabled={disabled || item.answered} onClick={() => onReply(item.key, "yes")}>
+            <button className="primary" type="button" disabled={item.answered} onClick={() => onReply(item.key, "yes")}>
                 {isFinal ? "Place order" : "Continue"}
             </button>
-            <button type="button" disabled={disabled || item.answered} onClick={() => onReply(item.key, "no")}>
+            <button type="button" disabled={item.answered} onClick={() => onReply(item.key, "no")}>
                 Cancel
             </button>
         </div>
@@ -52,4 +53,4 @@ export function OrderTicket({ item, disabled, onReply }: { item: TicketItem; dis
             </div>
         </div>
     );
-}
+});
