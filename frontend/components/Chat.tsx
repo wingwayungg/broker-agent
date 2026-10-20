@@ -111,8 +111,8 @@ export function Chat({ initial }: { initial: ThreadView | null }) {
         return () => controller.abort();
     }, [joinStatus, setBusyBoth]);
 
-    const send = useCallback((text: string): Promise<void> => {
-        if (busyRef.current) return Promise.resolve();
+    const send = useCallback((text: string) => {
+        if (busyRef.current) return;
         setBusyBoth(true);
         dispatch({ type: "append", item: textItem("user", text) });
         const status = textItem("status", "Thinking");
