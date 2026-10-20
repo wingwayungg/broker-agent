@@ -12,7 +12,7 @@ export async function createThread(): Promise<string> {
 }
 
 // Streams the run as server-sent events; 409 if the thread already has one running.
-export function postMessage(threadId: string, text: string): Promise<Response> {
+export function postMessage(threadId: string, text: string) {
     return fetch(`/api/threads/${threadId}/messages`, {
         method: "POST",
         headers: JSON_HEADERS,
@@ -21,7 +21,7 @@ export function postMessage(threadId: string, text: string): Promise<Response> {
 }
 
 // The thread's run in progress, replayed from its start; 204 if none.
-export function joinRun(threadId: string, signal: AbortSignal): Promise<Response> {
+export function joinRun(threadId: string, signal: AbortSignal) {
     return fetch(`/api/threads/${threadId}/stream`, { signal });
 }
 

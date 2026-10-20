@@ -48,7 +48,7 @@ export function reducer(items: Item[], action: Action): Item[] {
     }
 }
 
-export function threadItems(thread: Pick<ThreadView, "messages" | "interrupt">): Item[] {
+export function threadItems(thread: Pick<ThreadView, "messages" | "interrupt">) {
     const items: Item[] = thread.messages.map((m) => textItem(m.role, m.content));
     if (thread.interrupt) items.push(ticketItem(thread.interrupt));
     return items;
