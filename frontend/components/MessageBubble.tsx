@@ -7,8 +7,7 @@ const CLASSES = { user: "msg user", assistant: "msg assistant", status: "msg sys
 // Memoized so a streaming reply re-renders only its own bubble's markdown.
 export const MessageBubble = memo(function MessageBubble({ item }: { item: TextItem }) {
     if (item.kind === "assistant") {
-        // renderMarkdown escapes the model's text before adding any markup.
-        return <div className={CLASSES.assistant} dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />;
+        return <div className={CLASSES.assistant}>{renderMarkdown(item.text)}</div>;
     }
     return <div className={CLASSES[item.kind]}>{item.text}</div>;
 });
